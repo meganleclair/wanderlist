@@ -1,0 +1,163 @@
+'use client'
+
+import { useState } from 'react'
+import { useAuth } from '@/lib/AuthContext'
+
+interface AuthModalProps {
+  isOpen: boolean
+  onClose: () => void
+  initialMode?: 'login' | 'signup'
+}
+
+export default function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalProps) {
+  const [mode, setMode] = useState<'login' | 'signup'>(initialMode)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+
+  const { signIn, signUp } = useAuth()
+
+  if (!isOpen) return null
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
+    setSuccess('')
+
+    if (mode === 'login') {
+      const { error } = await signIn(email, password)
+      if (error) {
+        setError(error.message)
+      } else {
+        onClose()
+        resetForm()
+      }
+    } else {
+      const { error } = await signUp(email, password)
+      if (error) {
+        setError(error.message)
+      } else {
+        setSuccess('Check your email for a confirmation link!')
+      }
+    }
+
+    setLoading(false)
+  }
+
+  function resetForm() {
+    setEmail('')
+    setPassword('')
+    setError('')
+    setSuccess('')
+  }
+
+  function switchMode() {
+    setMode(mode === 'login' ? 'signup' : 'login')
+    setError('')
+    setSuccess('')
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div 
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        onClick={onClose}
+      ></div>
+      
+      <div className="relative bg-cream-50 rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-stone-400 hover:text-stone-600 transition-colors"
+        >
+          <i className="fa-solid fa-xmark text-xl"></i>
+        </button>
+
+        <div className="p-8">
+          <h2 className="text-2xl font-serif text-stone-900 mb-2">
+            {mode === 'login' ? 'Welcome back' : 'Create an account'}
+          </h2>
+          <p className="text-stone-500 text-sm mb-6">
+            {mode === 'login' 
+              ? 'Sign in to save places and create itineraries' 
+              : 'Join Wanderlist to start planning your adventures'}
+          </p>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label htmlFor="email" className="block text-sm font-medium text-stone-700 mb-1">
+                Email
+              </label>
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="input-field w-full px-4 py-3 rounded-md"
+                placeholder="you@example.com"
+                required
+              />
+            </div>
+
+            <div>
+              <label htmlFor="password" className="block text-sm font-medium text-stone-700 mb-1">
+                Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="input-field w-full px-4 py-3 rounded-md"
+                placeholder="••••••••"
+                required
+                minLength={6}
+              />
+            </div>
+
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">
+                {error}
+              </div>
+            )}
+
+            {success && (
+              <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-md text-sm">
+                {success}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn-primary w-full py-3 rounded-md font-medium disabled:opacity-50"
+            >
+              {loading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <i className="fa-solid fa-circle-notch animate-spin"></i>
+                  {mode === 'login' ? 'Signing in...' : 'Creating account...'}
+                </span>
+              ) : (
+                mode === 'login' ? 'Sign In' : 'Create Account'
+              )}
+            </button>
+          </form>
+
+          <div className="mt-6 text-center">
+            <p className="text-stone-500 text-sm">
+              {mode === 'login' ? "Don't have an account?" : 'Already have an account?'}
+              <button
+                onClick={switchMode}
+                className="ml-1 text-stone-900 font-medium hover:underline"
+              >
+                {mode === 'login' ? 'Sign up' : 'Sign in'}
+              </button>
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
