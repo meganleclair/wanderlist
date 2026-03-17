@@ -135,6 +135,7 @@ export interface Itinerary {
 export interface SavedPlace {
   id: string
   itinerary_id: string
+  place_id?: string
   name: string
   category: string | null
   description: string | null

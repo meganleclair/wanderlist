@@ -17,8 +17,8 @@ export function isValidCityName(city: string): boolean {
   if (!city || typeof city !== 'string') return false
   if (city.length < 1 || city.length > 100) return false
   
-  // Allow letters, spaces, hyphens, apostrophes, periods (for abbreviations)
-  const validPattern = /^[\p{L}\p{M}\s\-'.]+$/u
+  // Allow letters (including accented), spaces, hyphens, apostrophes, periods
+  const validPattern = /^[a-zA-ZÀ-ÿ\s\-'.]+$/
   return validPattern.test(city)
 }
 
@@ -49,11 +49,11 @@ export function checkRateLimit(
   
   // Clean up old entries periodically
   if (rateLimitMap.size > 10000) {
-    for (const [key, value] of rateLimitMap.entries()) {
+    Array.from(rateLimitMap.entries()).forEach(([key, value]) => {
       if (value.resetTime < now) {
         rateLimitMap.delete(key)
       }
-    }
+    })
   }
   
   if (!record || record.resetTime < now) {
