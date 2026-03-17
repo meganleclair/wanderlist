@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { PlaceResult } from '@/lib/database.types'
 import axios from 'axios'
+import { sanitizeInput, isValidCityName, checkRateLimit, getClientIP } from '@/lib/security'
 
 const TOP_ATTRACTION_CATEGORIES = [
   'tourism.attraction',
@@ -166,49 +167,27 @@ function capitalizeCity(name: string): string {
     .join(' ')
 }
 
-async function fetchWikipediaDescription(placeName: string, cityName: string): Promise<string | undefined> {
+async function fetchPlaceImage(placeName: string, cityName: string, unsplashKey: string): Promise<string | null> {
   try {
-    // Use Wikipedia REST API directly for summary
-    const searchQuery = `${placeName} ${cityName}`.replace(/\s+/g, '_')
-    const summaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(searchQuery)}`
-    
-    try {
-      const { data } = await axios.get(summaryUrl, { 
-        timeout: 8000,
-        headers: {
-          'User-Agent': 'Wanderlist/1.0 (travel app)'
-        }
-      })
-      
-      if (data.extract && data.extract.length > 50) {
-        let desc = data.extract
-        if (desc.length > 280) {
-          desc = desc.substring(0, 277) + '...'
-        }
-        return desc
+    const { data } = await axios.get<UnsplashResponse>(
+      'https://api.unsplash.com/search/photos',
+      {
+        params: {
+          query: `${placeName} ${cityName}`,
+          per_page: 1,
+          orientation: 'landscape',
+        },
+        headers: { Authorization: `Client-ID ${unsplashKey}` },
+        timeout: 5000,
       }
-    } catch {
-      // Try just the place name
-      const simpleUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(placeName.replace(/\s+/g, '_'))}`
-      const { data } = await axios.get(simpleUrl, { 
-        timeout: 8000,
-        headers: {
-          'User-Agent': 'Wanderlist/1.0 (travel app)'
-        }
-      })
-      
-      if (data.extract && data.extract.length > 50) {
-        let desc = data.extract
-        if (desc.length > 280) {
-          desc = desc.substring(0, 277) + '...'
-        }
-        return desc
-      }
+    )
+    if (data.results && data.results.length > 0) {
+      return data.results[0].urls.regular
     }
-  } catch (e) {
-    // Silently fail - we'll use generated description
+    return null
+  } catch {
+    return null
   }
-  return undefined
 }
 
 async function fetchCityImage(cityName: string, unsplashKey: string): Promise<{ url: string; credit: string } | null> {
@@ -243,11 +222,35 @@ async function fetchCityImage(cityName: string, unsplashKey: string): Promise<{ 
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { city } = body
+    // Rate limiting
+    const clientIP = getClientIP(request)
+    const rateLimit = checkRateLimit(`places:${clientIP}`, 20, 60000) // 20 requests per minute
+    
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please try again later.' },
+        { 
+          status: 429,
+          headers: {
+            'Retry-After': String(Math.ceil(rateLimit.resetIn / 1000)),
+            'X-RateLimit-Remaining': '0'
+          }
+        }
+      )
+    }
 
-    if (!city || typeof city !== 'string') {
+    const body = await request.json()
+    const rawCity = body.city
+
+    // Input validation
+    if (!rawCity || typeof rawCity !== 'string') {
       return NextResponse.json({ error: 'City name is required' }, { status: 400 })
+    }
+
+    const city = sanitizeInput(rawCity)
+    
+    if (!isValidCityName(city)) {
+      return NextResponse.json({ error: 'Invalid city name' }, { status: 400 })
     }
 
     const apiKey = process.env.GEOAPIFY_API_KEY
@@ -295,63 +298,100 @@ export async function POST(request: NextRequest) {
     const topResponse = { data: topData }
     const gemResponse = { data: gemData }
 
-    // Transform raw places - filter out non-Latin scripts (Japanese, Arabic, etc.)
-    // Get 10 of each type for better filter coverage
+    // Transform raw places - filter out non-Latin scripts
+    // Get more to account for filtering by image availability
     const rawTopPlaces = (topResponse.data.features || [])
       .filter(p => p.properties.name && isLatinScript(p.properties.name))
-      .slice(0, 10)
+      .slice(0, 15)
     
     const rawGemPlaces = (gemResponse.data.features || [])
       .filter(p => p.properties.name && isLatinScript(p.properties.name))
-      .slice(0, 10)
+      .slice(0, 15)
 
-    // Fetch city image only (no individual place images)
+    // Fetch city image
     let cityImage: { url: string; credit: string } | null = null
     if (unsplashKey) {
       cityImage = await fetchCityImage(cityName, unsplashKey)
     }
 
-    // Fetch Wikipedia descriptions in parallel
-    const allPlaces = [...rawTopPlaces, ...rawGemPlaces]
-    const wikiDescriptions = await Promise.all(
-      allPlaces.map(place => fetchWikipediaDescription(place.properties.name!, cityName))
-    )
-    
-    const topDescriptions = wikiDescriptions.slice(0, rawTopPlaces.length)
-    const gemDescriptions = wikiDescriptions.slice(rawTopPlaces.length)
+    // Fetch images for places (try to get real images, but include all places)
+    let topResults: PlaceResult[] = []
+    let hiddenGems: PlaceResult[] = []
 
-    // Transform places with Wikipedia descriptions
-    const topResults: PlaceResult[] = rawTopPlaces.map((place, i) => {
-      const [pLon, pLat] = place.geometry.coordinates
-      const props = place.properties
-      return {
-        name: props.name!,
-        category: formatCategory(props.categories),
-        rawCategories: getRawCategories(props.categories),
-        description: topDescriptions[i],
-        address: props.formatted || props.address_line1,
-        lat: pLat,
-        lon: pLon,
-        city: cityName,
-        website: props.website || props.datasource?.raw?.website,
-      }
-    })
-    
-    const hiddenGems: PlaceResult[] = rawGemPlaces.map((place, i) => {
-      const [pLon, pLat] = place.geometry.coordinates
-      const props = place.properties
-      return {
-        name: props.name!,
-        category: formatCategory(props.categories),
-        rawCategories: getRawCategories(props.categories),
-        description: gemDescriptions[i],
-        address: props.formatted || props.address_line1,
-        lat: pLat,
-        lon: pLon,
-        city: cityName,
-        website: props.website || props.datasource?.raw?.website,
-      }
-    })
+    if (unsplashKey) {
+      // Fetch images for top places - include all, even without images
+      topResults = await Promise.all(
+        rawTopPlaces.slice(0, 10).map(async (place) => {
+          const [pLon, pLat] = place.geometry.coordinates
+          const props = place.properties
+          const imageUrl = await fetchPlaceImage(props.name!, cityName, unsplashKey)
+          
+          return {
+            name: props.name!,
+            category: formatCategory(props.categories),
+            rawCategories: getRawCategories(props.categories),
+            address: props.formatted || props.address_line1,
+            lat: pLat,
+            lon: pLon,
+            city: cityName,
+            website: props.website || props.datasource?.raw?.website,
+            imageUrl: imageUrl || undefined, // Include even if no image found
+          }
+        })
+      )
+      
+      // Fetch images for hidden gems
+      hiddenGems = await Promise.all(
+        rawGemPlaces.slice(0, 10).map(async (place) => {
+          const [pLon, pLat] = place.geometry.coordinates
+          const props = place.properties
+          const imageUrl = await fetchPlaceImage(props.name!, cityName, unsplashKey)
+          
+          return {
+            name: props.name!,
+            category: formatCategory(props.categories),
+            rawCategories: getRawCategories(props.categories),
+            address: props.formatted || props.address_line1,
+            lat: pLat,
+            lon: pLon,
+            city: cityName,
+            website: props.website || props.datasource?.raw?.website,
+            imageUrl: imageUrl || undefined,
+          }
+        })
+      )
+    } else {
+      // No Unsplash key - return places without images
+      topResults = rawTopPlaces.slice(0, 10).map((place) => {
+        const [pLon, pLat] = place.geometry.coordinates
+        const props = place.properties
+        return {
+          name: props.name!,
+          category: formatCategory(props.categories),
+          rawCategories: getRawCategories(props.categories),
+          address: props.formatted || props.address_line1,
+          lat: pLat,
+          lon: pLon,
+          city: cityName,
+          website: props.website || props.datasource?.raw?.website,
+        }
+      })
+      
+      hiddenGems = rawGemPlaces.slice(0, 10).map((place) => {
+        const [pLon, pLat] = place.geometry.coordinates
+        const props = place.properties
+        return {
+          name: props.name!,
+          category: formatCategory(props.categories),
+          rawCategories: getRawCategories(props.categories),
+          address: props.formatted || props.address_line1,
+          lat: pLat,
+          lon: pLon,
+          city: cityName,
+          website: props.website || props.datasource?.raw?.website,
+        }
+      })
+    }
 
 
     try {

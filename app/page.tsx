@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { PlaceResult, SearchRecord, SavedPlace } from '@/lib/database.types'
 import { useAuth } from '@/lib/AuthContext'
 import { supabase } from '@/lib/supabase'
@@ -15,7 +16,6 @@ import SavePlaceModal from '@/components/SavePlaceModal'
 import PlaceDetailModal from '@/components/PlaceDetailModal'
 
 type AppState = 'empty' | 'loading' | 'success' | 'error'
-type SortOption = 'default' | 'distance' | 'name'
 
 function capitalizeCity(name: string): string {
   return name
@@ -25,50 +25,58 @@ function capitalizeCity(name: string): string {
     .join(' ')
 }
 
-function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371
-  const dLat = (lat2 - lat1) * Math.PI / 180
-  const dLon = (lon2 - lon1) * Math.PI / 180
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLon/2) * Math.sin(dLon/2)
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
-  return R * c
-}
-
 interface CityImage {
   url: string
   credit: string
 }
 
-interface CityCoords {
-  lat: number
-  lon: number
+// Category images for visual cards
+const CATEGORY_IMAGES: Record<string, string> = {
+  museum: 'https://images.unsplash.com/photo-1554907984-15263bfd63bd?w=400&q=80',
+  gallery: 'https://images.unsplash.com/photo-1577720643272-265f09367456?w=400&q=80',
+  historic: 'https://images.unsplash.com/photo-1539037116277-4db20889f2d4?w=400&q=80',
+  park: 'https://images.unsplash.com/photo-1585320806297-9794b3e4eeae?w=400&q=80',
+  garden: 'https://images.unsplash.com/photo-1585320806297-9794b3e4eeae?w=400&q=80',
+  beach: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=400&q=80',
+  restaurant: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=400&q=80',
+  cafe: 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=400&q=80',
+  bar: 'https://images.unsplash.com/photo-1572116469696-31de0f17cc34?w=400&q=80',
+  market: 'https://images.unsplash.com/photo-1533900298318-6b8da08a523e?w=400&q=80',
+  church: 'https://images.unsplash.com/photo-1548625149-fc4a29cf7092?w=400&q=80',
+  landmark: 'https://images.unsplash.com/photo-1499856871958-5b9627545d1a?w=400&q=80',
+  default: 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=400&q=80',
 }
 
-interface PlaceWithType extends PlaceResult {
-  type: 'top' | 'gem'
+function getPlaceImage(place: PlaceResult): string {
+  // Use real image if available from API
+  if (place.imageUrl) return place.imageUrl
+  
+  // Fallback to category-based images
+  const cat = (place.category || '').toLowerCase()
+  const name = (place.name || '').toLowerCase()
+  
+  if (name.includes('museu') || name.includes('museum') || cat.includes('museum')) return CATEGORY_IMAGES.museum
+  if (name.includes('gallery') || cat.includes('gallery') || cat.includes('art')) return CATEGORY_IMAGES.gallery
+  if (name.includes('park') || name.includes('parc') || cat.includes('park')) return CATEGORY_IMAGES.park
+  if (name.includes('garden') || name.includes('jardí') || cat.includes('garden')) return CATEGORY_IMAGES.garden
+  if (name.includes('beach') || name.includes('platja') || cat.includes('beach')) return CATEGORY_IMAGES.beach
+  if (name.includes('mercat') || name.includes('market') || cat.includes('market')) return CATEGORY_IMAGES.market
+  if (name.includes('church') || name.includes('església') || name.includes('basilica') || cat.includes('church')) return CATEGORY_IMAGES.church
+  if (cat.includes('cafe') || cat.includes('café')) return CATEGORY_IMAGES.cafe
+  if (cat.includes('restaurant') || cat.includes('food')) return CATEGORY_IMAGES.restaurant
+  if (cat.includes('bar') || cat.includes('pub')) return CATEGORY_IMAGES.bar
+  if (cat.includes('historic') || cat.includes('building')) return CATEGORY_IMAGES.historic
+  if (cat.includes('landmark') || cat.includes('monument')) return CATEGORY_IMAGES.landmark
+  
+  return CATEGORY_IMAGES.default
 }
-
-const CATEGORY_FILTERS = [
-  { id: 'culture', label: 'Museums & Culture', icon: 'fa-building-columns', keywords: ['museum', 'gallery', 'art', 'culture', 'theatre', 'theater', 'entertainment'] },
-  { id: 'nature', label: 'Parks & Nature', icon: 'fa-leaf', keywords: ['park', 'garden', 'nature', 'beach'] },
-  { id: 'food', label: 'Food & Drink', icon: 'fa-utensils', keywords: ['cafe', 'catering', 'restaurant', 'food', 'bar', 'pub'] },
-  { id: 'shopping', label: 'Shopping', icon: 'fa-bag-shopping', keywords: ['market', 'shop', 'store', 'marketplace', 'commercial'] },
-  { id: 'historic', label: 'Historic Sites', icon: 'fa-monument', keywords: ['historic', 'monument', 'building', 'castle', 'church', 'temple', 'tourism.attraction', 'tourism.sights', 'access'] },
-]
-
-const TYPE_FILTERS = [
-  { id: 'top', label: 'Top Picks', icon: 'fa-star' },
-  { id: 'gem', label: 'Hidden Gems', icon: 'fa-gem' },
-]
 
 export default function Home() {
   const { user, session } = useAuth()
+  const searchParams = useSearchParams()
   const [appState, setAppState] = useState<AppState>('empty')
   const [searchedCity, setSearchedCity] = useState('')
   const [cityImage, setCityImage] = useState<CityImage | null>(null)
-  const [cityCoords, setCityCoords] = useState<CityCoords | null>(null)
   const [topResults, setTopResults] = useState<PlaceResult[]>([])
   const [hiddenGems, setHiddenGems] = useState<PlaceResult[]>([])
   const [recentSearches, setRecentSearches] = useState<SearchRecord[]>([])
@@ -77,12 +85,44 @@ export default function Home() {
   const [showSaveModal, setShowSaveModal] = useState(false)
   const [placeToSave, setPlaceToSave] = useState<PlaceResult | null>(null)
   const [selectedPlace, setSelectedPlace] = useState<PlaceResult | null>(null)
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([])
-  const [selectedTypes, setSelectedTypes] = useState<string[]>(['top', 'gem'])
-  const [sortBy, setSortBy] = useState<SortOption>('default')
+  const [showAddCustom, setShowAddCustom] = useState(false)
+  const [customPlaceName, setCustomPlaceName] = useState('')
+  const [placeSuggestions, setPlaceSuggestions] = useState<Array<{name: string, address?: string, category?: string, lat?: number, lon?: number}>>([])
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false)
+
+  // Debounced place search
+  useEffect(() => {
+    if (!showAddCustom || customPlaceName.length < 2) {
+      setPlaceSuggestions([])
+      return
+    }
+
+    setLoadingSuggestions(true)
+    const debounce = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/place-search?q=${encodeURIComponent(customPlaceName)}&city=${encodeURIComponent(searchedCity)}`)
+        const data = await res.json()
+        setPlaceSuggestions(data.suggestions || [])
+      } catch {
+        setPlaceSuggestions([])
+      }
+      setLoadingSuggestions(false)
+    }, 300)
+
+    return () => clearTimeout(debounce)
+  }, [customPlaceName, searchedCity, showAddCustom])
+
+  // Combine and limit results for cleaner display
+  const allPlaces = [...topResults, ...hiddenGems]
 
   useEffect(() => {
     fetchRecentSearches()
+    
+    // Check for search param in URL
+    const searchQuery = searchParams.get('search')
+    if (searchQuery) {
+      handleSearch(searchQuery)
+    }
   }, [])
 
   useEffect(() => {
@@ -136,7 +176,6 @@ export default function Home() {
     setSearchedCity(capitalizeCity(city))
     setErrorMessage('')
     setCityImage(null)
-    setCityCoords(null)
 
     try {
       const response = await fetch('/api/places', {
@@ -151,23 +190,8 @@ export default function Home() {
         throw new Error(data.error || 'Failed to fetch places')
       }
 
-      const coords = data.cityLat && data.cityLon 
-        ? { lat: data.cityLat, lon: data.cityLon } 
-        : null
-      setCityCoords(coords)
-
-      const addDistance = (places: PlaceResult[]) => {
-        if (!coords) return places
-        return places.map(p => ({
-          ...p,
-          distance: p.lat && p.lon 
-            ? calculateDistance(coords.lat, coords.lon, p.lat, p.lon)
-            : undefined
-        }))
-      }
-
-      setTopResults(addDistance(data.topResults || []))
-      setHiddenGems(addDistance(data.hiddenGems || []))
+      setTopResults(data.topResults || [])
+      setHiddenGems(data.hiddenGems || [])
       setCityImage(data.cityImage || null)
       setSearchedCity(data.city || city)
       setAppState('success')
@@ -214,56 +238,6 @@ export default function Home() {
     setSelectedPlace(place)
   }
 
-  function toggleCategory(categoryId: string) {
-    setSelectedCategories(prev => 
-      prev.includes(categoryId) 
-        ? prev.filter(c => c !== categoryId)
-        : [...prev, categoryId]
-    )
-  }
-
-  function toggleType(typeId: string) {
-    setSelectedTypes(prev => {
-      if (prev.includes(typeId)) {
-        // Don't allow deselecting both
-        if (prev.length === 1) return prev
-        return prev.filter(t => t !== typeId)
-      }
-      return [...prev, typeId]
-    })
-  }
-
-  // Merge, filter, and sort places with useMemo
-  const allPlaces = useMemo(() => {
-    const merged: PlaceWithType[] = [
-      ...topResults.map(p => ({ ...p, type: 'top' as const })),
-      ...hiddenGems.map(p => ({ ...p, type: 'gem' as const })),
-    ]
-    
-    const filtered = merged.filter(place => {
-      if (!selectedTypes.includes(place.type)) return false
-      
-      if (selectedCategories.length > 0) {
-        const rawCat = place.rawCategories || ''
-        const matchesAnyCategory = selectedCategories.some(selectedCat => {
-          const filter = CATEGORY_FILTERS.find(f => f.id === selectedCat)
-          return filter?.keywords.some(keyword => rawCat.includes(keyword))
-        })
-        if (!matchesAnyCategory) return false
-      }
-      
-      return true
-    })
-
-    if (sortBy === 'distance') {
-      return [...filtered].sort((a, b) => (a.distance || 999) - (b.distance || 999))
-    }
-    if (sortBy === 'name') {
-      return [...filtered].sort((a, b) => a.name.localeCompare(b.name))
-    }
-    return filtered
-  }, [topResults, hiddenGems, selectedTypes, selectedCategories, sortBy])
-
   return (
     <main className="min-h-screen bg-cream-100">
       <Navigation />
@@ -308,132 +282,291 @@ export default function Home() {
           
           {appState === 'success' && (
             <div className="animate-fade-in">
+              {/* City Header */}
               {cityImage ? (
-                <div className="relative rounded-xl overflow-hidden mb-8 h-64 md:h-80">
+                <div className="relative rounded-2xl overflow-hidden mb-10 h-72 md:h-96">
                   <img 
                     src={cityImage.url} 
                     alt={searchedCity}
                     className="absolute inset-0 w-full h-full object-cover"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent"></div>
-                  <div className="absolute bottom-0 left-0 right-0 p-6 md:p-8">
-                    <p className="text-white/70 text-sm uppercase tracking-widest mb-1">Exploring</p>
-                    <h2 className="text-3xl md:text-5xl font-serif text-white">
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent"></div>
+                  <div className="absolute bottom-0 left-0 right-0 p-8">
+                    <p className="text-white/60 text-xs uppercase tracking-widest mb-2">Exploring</p>
+                    <h2 className="text-4xl md:text-6xl font-serif text-white mb-2">
                       {searchedCity}
                     </h2>
-                    <p className="text-white/50 text-xs mt-2">
+                    <p className="text-white/40 text-xs">
                       Photo by {cityImage.credit} on Unsplash
                     </p>
                   </div>
                 </div>
               ) : (
-                <div className="text-center mb-8">
-                  <p className="text-stone-500 text-sm uppercase tracking-widest mb-2">Exploring</p>
-                  <h2 className="text-3xl md:text-4xl font-serif text-stone-900">
+                <div className="text-center mb-10 py-8">
+                  <p className="text-stone-400 text-xs uppercase tracking-widest mb-2">Exploring</p>
+                  <h2 className="text-4xl md:text-5xl font-serif text-stone-900">
                     {searchedCity}
                   </h2>
                 </div>
               )}
 
-              {/* Filter Chips */}
-              <div className="mb-8">
-                {/* Type Filters */}
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {TYPE_FILTERS.map(filter => (
-                    <button
-                      key={filter.id}
-                      onClick={() => toggleType(filter.id)}
-                      className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
-                        selectedTypes.includes(filter.id)
-                          ? 'bg-stone-900 text-white'
-                          : 'bg-white text-stone-600 border border-cream-300 hover:border-stone-400'
-                      }`}
-                    >
-                      <i className={`fa-solid ${filter.icon} text-xs`}></i>
-                      {filter.label}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Category Filters */}
-                <div className="flex flex-wrap gap-2">
-                  {CATEGORY_FILTERS.map(filter => (
-                    <button
-                      key={filter.id}
-                      onClick={() => toggleCategory(filter.id)}
-                      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                        selectedCategories.includes(filter.id)
-                          ? 'bg-stone-700 text-white'
-                          : 'bg-cream-200 text-stone-600 hover:bg-cream-300'
-                      }`}
-                    >
-                      <i className={`fa-solid ${filter.icon}`}></i>
-                      {filter.label}
-                    </button>
-                  ))}
-                  {selectedCategories.length > 0 && (
-                    <button
-                      onClick={() => setSelectedCategories([])}
-                      className="text-xs text-stone-400 hover:text-stone-600 px-2"
-                    >
-                      Clear filters
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Sort & Results Count */}
-              <div className="flex items-center justify-between mb-5">
-                <p className="text-sm text-stone-500">
-                  {allPlaces.length} {allPlaces.length === 1 ? 'place' : 'places'} found
-                </p>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-stone-400">Sort by</span>
-                  <select
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value as SortOption)}
-                    className="text-sm bg-white border border-cream-300 rounded-md px-3 py-1.5 text-stone-700 focus:outline-none focus:border-stone-400"
+              {allPlaces.length === 0 ? (
+                <div className="bg-cream-100 border border-cream-300 rounded-xl p-12 text-center max-w-lg mx-auto">
+                  <i className="fa-solid fa-map-location-dot text-4xl text-stone-300 mb-4"></i>
+                  <h3 className="font-serif text-xl text-stone-800 mb-2">No places found</h3>
+                  <p className="text-stone-500 mb-6">
+                    We couldn't find popular spots here, but you can add your own!
+                  </p>
+                  <button
+                    onClick={() => setShowAddCustom(true)}
+                    className="btn-primary px-6 py-3 rounded-lg font-medium inline-flex items-center gap-2"
                   >
-                    <option value="default">Default</option>
-                    <option value="distance">Distance</option>
-                    <option value="name">Name A-Z</option>
-                  </select>
-                </div>
-              </div>
-              
-              {topResults.length === 0 && hiddenGems.length === 0 ? (
-                <div className="bg-cream-200 border border-cream-300 rounded-lg p-8 text-center max-w-lg mx-auto">
-                  <i className="fa-solid fa-map-location-dot text-3xl text-stone-400 mb-4"></i>
-                  <p className="text-stone-600">
-                    We couldn't find many attractions for this location. 
-                    Try searching for a larger city or check the spelling.
-                  </p>
-                </div>
-              ) : allPlaces.length === 0 ? (
-                <div className="bg-cream-200 border border-cream-300 rounded-lg p-8 text-center max-w-lg mx-auto">
-                  <i className="fa-solid fa-filter text-3xl text-stone-400 mb-4"></i>
-                  <p className="text-stone-600">
-                    No places match your current filters. Try adjusting your selection.
-                  </p>
+                    <i className="fa-solid fa-plus"></i>
+                    Add a place you know
+                  </button>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {allPlaces.map((place, index) => (
-                    <PlaceCard 
-                      key={`${place.type}-${index}`} 
-                      place={place} 
-                      variant={place.type}
-                      onSave={handleSavePlace}
-                      onUnsave={handleUnsavePlace}
-                      isSaved={!!isPlaceSaved(place.name)}
-                      onClick={handlePlaceClick}
-                    />
-                  ))}
+                <>
+                  {/* Results Header */}
+                  <div className="flex items-center justify-between mb-6">
+                    <div>
+                      <h3 className="font-serif text-2xl text-stone-900">Places to explore</h3>
+                      <p className="text-stone-500 text-sm">{allPlaces.length} spots worth checking out</p>
+                    </div>
+                    <button
+                      onClick={() => setShowAddCustom(true)}
+                      className="flex items-center gap-2 px-4 py-2 bg-white border border-cream-300 rounded-lg text-stone-600 hover:border-stone-400 hover:text-stone-800 transition-colors text-sm"
+                    >
+                      <i className="fa-solid fa-plus"></i>
+                      Add your own
+                    </button>
+                  </div>
+
+                  {/* Visual Cards Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                    {allPlaces.map((place, index) => (
+                      <div 
+                        key={index}
+                        onClick={() => handlePlaceClick(place)}
+                        className="group cursor-pointer bg-white rounded-xl overflow-hidden border border-cream-200 hover:shadow-xl hover:border-stone-300 transition-all duration-300"
+                      >
+                        {/* Image */}
+                        <div className="relative h-40 overflow-hidden">
+                          <img 
+                            src={getPlaceImage(place)} 
+                            alt={place.name}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent"></div>
+                          
+                          {/* Save button */}
+                          {user && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                if (isPlaceSaved(place.name)) {
+                                  handleUnsavePlace(place)
+                                } else {
+                                  handleSavePlace(place)
+                                }
+                              }}
+                              className={`absolute top-3 right-3 w-9 h-9 rounded-full flex items-center justify-center transition-all ${
+                                isPlaceSaved(place.name)
+                                  ? 'bg-white text-stone-900'
+                                  : 'bg-black/30 text-white opacity-0 group-hover:opacity-100 hover:bg-white hover:text-stone-900'
+                              }`}
+                            >
+                              <i className={`fa-${isPlaceSaved(place.name) ? 'solid' : 'regular'} fa-bookmark`}></i>
+                            </button>
+                          )}
+                          
+                          {/* Category pill */}
+                          <div className="absolute bottom-3 left-3">
+                            <span className="px-2.5 py-1 bg-white/90 backdrop-blur-sm rounded-full text-xs font-medium text-stone-700">
+                              {place.category || 'Attraction'}
+                            </span>
+                          </div>
+                        </div>
+                        
+                        {/* Content */}
+                        <div className="p-4">
+                          <h4 className="font-serif text-lg text-stone-900 mb-1 group-hover:text-stone-700 transition-colors line-clamp-1">
+                            {place.name}
+                          </h4>
+                          {place.address && (
+                            <p className="text-xs text-stone-400 mb-2 line-clamp-1">
+                              <i className="fa-solid fa-location-dot mr-1"></i>
+                              {place.address}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    
+                    {/* Add Custom Place Card */}
+                    <button
+                      onClick={() => setShowAddCustom(true)}
+                      className="group cursor-pointer bg-cream-50 rounded-xl overflow-hidden border-2 border-dashed border-cream-300 hover:border-stone-400 transition-all duration-300 min-h-[240px] flex flex-col items-center justify-center gap-3"
+                    >
+                      <div className="w-14 h-14 rounded-full bg-cream-200 group-hover:bg-cream-300 transition-colors flex items-center justify-center">
+                        <i className="fa-solid fa-plus text-xl text-stone-500"></i>
+                      </div>
+                      <div className="text-center">
+                        <p className="font-medium text-stone-700">Know a place?</p>
+                        <p className="text-sm text-stone-500">Add it to your trip</p>
+                      </div>
+                    </button>
+                  </div>
+                </>
+              )}
+              
+              {/* Add Custom Place Modal */}
+              {showAddCustom && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center">
+                  <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => {
+                    setShowAddCustom(false)
+                    setCustomPlaceName('')
+                    setPlaceSuggestions([])
+                  }}></div>
+                  <div className="relative bg-cream-50 rounded-xl shadow-2xl w-full max-w-md mx-4 p-6">
+                    <button 
+                      onClick={() => {
+                        setShowAddCustom(false)
+                        setCustomPlaceName('')
+                        setPlaceSuggestions([])
+                      }} 
+                      className="absolute top-4 right-4 text-stone-400 hover:text-stone-600"
+                    >
+                      <i className="fa-solid fa-xmark text-xl"></i>
+                    </button>
+                    
+                    <h3 className="font-serif text-2xl text-stone-900 mb-2">Add a place</h3>
+                    <p className="text-stone-500 text-sm mb-6">
+                      Search for a place in {searchedCity} or type your own.
+                    </p>
+                    
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={customPlaceName}
+                        onChange={(e) => setCustomPlaceName(e.target.value)}
+                        placeholder="Search for a place..."
+                        className="input-field w-full px-4 py-3 rounded-lg"
+                        autoFocus
+                      />
+                      
+                      {loadingSuggestions && (
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                          <i className="fa-solid fa-circle-notch animate-spin text-stone-400"></i>
+                        </div>
+                      )}
+                      
+                      {/* Suggestions dropdown */}
+                      {placeSuggestions.length > 0 && (
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg shadow-lg border border-cream-200 overflow-hidden z-10 max-h-64 overflow-y-auto">
+                          {placeSuggestions.map((suggestion, i) => (
+                            <button
+                              key={i}
+                              onClick={() => {
+                                const place: PlaceResult = {
+                                  name: suggestion.name,
+                                  address: suggestion.address,
+                                  category: suggestion.category,
+                                  city: searchedCity,
+                                  lat: suggestion.lat,
+                                  lon: suggestion.lon,
+                                }
+                                handleSavePlace(place)
+                                setCustomPlaceName('')
+                                setPlaceSuggestions([])
+                                setShowAddCustom(false)
+                              }}
+                              className="w-full text-left px-4 py-3 hover:bg-cream-100 transition-colors border-b border-cream-100 last:border-0"
+                            >
+                              <p className="font-medium text-stone-900">{suggestion.name}</p>
+                              {suggestion.address && (
+                                <p className="text-xs text-stone-500 truncate">{suggestion.address}</p>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="mt-4">
+                      <button
+                        onClick={() => {
+                          if (customPlaceName.trim()) {
+                            const customPlace: PlaceResult = {
+                              name: customPlaceName.trim(),
+                              city: searchedCity,
+                              category: 'Custom',
+                            }
+                            handleSavePlace(customPlace)
+                            setCustomPlaceName('')
+                            setPlaceSuggestions([])
+                            setShowAddCustom(false)
+                          }
+                        }}
+                        disabled={!customPlaceName.trim()}
+                        className="btn-primary w-full py-3 rounded-lg font-medium disabled:opacity-50"
+                      >
+                        {placeSuggestions.length > 0 ? 'Add as Custom Place' : 'Save to Trip'}
+                      </button>
+                      {placeSuggestions.length > 0 && (
+                        <p className="text-xs text-stone-400 text-center mt-2">
+                          Or click a suggestion above
+                        </p>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
           )}
         </section>
+
+        {/* Featured Itineraries */}
+        {appState === 'empty' && (
+          <section className="pt-8">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-serif text-stone-900">Ready-made Itineraries</h3>
+              <a href="/discover" className="text-sm text-stone-500 hover:text-stone-700 transition-colors">
+                See all <i className="fa-solid fa-arrow-right ml-1"></i>
+              </a>
+            </div>
+            <div className="grid md:grid-cols-3 gap-4">
+              {[
+                { id: 'paris', name: 'Classic Paris', duration: '4 days', image: 'https://images.unsplash.com/photo-1499856871958-5b9627545d1a?w=400&q=80', tag: 'Culture' },
+                { id: 'bali', name: 'Bali Paradise', duration: '6 days', image: 'https://images.unsplash.com/photo-1537996194471-e657df975ab4?w=400&q=80', tag: 'Beach' },
+                { id: 'rome', name: 'Eternal Rome', duration: '4 days', image: 'https://images.unsplash.com/photo-1552832230-c0197dd311b5?w=400&q=80', tag: 'History' },
+              ].map(trip => (
+                <a 
+                  key={trip.id}
+                  href="/discover"
+                  className="group bg-white rounded-xl overflow-hidden border border-cream-300 hover:shadow-md transition-shadow"
+                >
+                  <div className="aspect-[16/10] relative overflow-hidden">
+                    <img 
+                      src={trip.image} 
+                      alt={trip.name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                    <span className="absolute top-2 left-2 bg-white/90 backdrop-blur-sm px-2 py-0.5 rounded text-xs font-medium text-stone-700">
+                      {trip.tag}
+                    </span>
+                  </div>
+                  <div className="p-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-serif text-stone-900">{trip.name}</h4>
+                      <span className="text-xs text-stone-400">{trip.duration}</span>
+                    </div>
+                  </div>
+                </a>
+              ))}
+            </div>
+          </section>
+        )}
 
         {recentSearches.length > 0 && (
           <RecentSearches 

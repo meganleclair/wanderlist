@@ -19,13 +19,62 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * c
 }
 
+// Suggest cities based on trip name
+const REGION_CITIES: Record<string, string[]> = {
+  greece: ['Athens', 'Santorini', 'Mykonos', 'Crete', 'Rhodes'],
+  italy: ['Rome', 'Florence', 'Venice', 'Milan', 'Amalfi'],
+  spain: ['Barcelona', 'Madrid', 'Seville', 'Valencia', 'Ibiza'],
+  france: ['Paris', 'Nice', 'Lyon', 'Marseille', 'Bordeaux'],
+  japan: ['Tokyo', 'Kyoto', 'Osaka', 'Hiroshima', 'Nara'],
+  thailand: ['Bangkok', 'Chiang Mai', 'Phuket', 'Krabi', 'Pattaya'],
+  portugal: ['Lisbon', 'Porto', 'Sintra', 'Faro', 'Madeira'],
+  croatia: ['Dubrovnik', 'Split', 'Zagreb', 'Hvar', 'Plitvice'],
+  mexico: ['Mexico City', 'Cancun', 'Tulum', 'Oaxaca', 'Playa del Carmen'],
+  uk: ['London', 'Edinburgh', 'Bath', 'Oxford', 'Cambridge'],
+  england: ['London', 'Bath', 'Oxford', 'Cambridge', 'Brighton'],
+  germany: ['Berlin', 'Munich', 'Hamburg', 'Cologne', 'Frankfurt'],
+  netherlands: ['Amsterdam', 'Rotterdam', 'Utrecht', 'The Hague', 'Haarlem'],
+  australia: ['Sydney', 'Melbourne', 'Brisbane', 'Perth', 'Gold Coast'],
+  bali: ['Ubud', 'Seminyak', 'Canggu', 'Uluwatu', 'Sanur'],
+  indonesia: ['Bali', 'Jakarta', 'Yogyakarta', 'Lombok', 'Komodo'],
+  vietnam: ['Hanoi', 'Ho Chi Minh City', 'Da Nang', 'Hoi An', 'Ha Long Bay'],
+  morocco: ['Marrakech', 'Fes', 'Casablanca', 'Chefchaouen', 'Essaouira'],
+  turkey: ['Istanbul', 'Cappadocia', 'Antalya', 'Bodrum', 'Ephesus'],
+  egypt: ['Cairo', 'Luxor', 'Aswan', 'Alexandria', 'Hurghada'],
+  europe: ['Paris', 'Rome', 'Barcelona', 'Amsterdam', 'Prague'],
+  asia: ['Tokyo', 'Bangkok', 'Singapore', 'Hong Kong', 'Seoul'],
+  summer: ['Barcelona', 'Santorini', 'Amalfi', 'Dubrovnik', 'Ibiza'],
+  beach: ['Bali', 'Phuket', 'Cancun', 'Maldives', 'Santorini'],
+}
+
+function getSuggestedCities(tripName: string): string[] {
+  const nameLower = tripName.toLowerCase()
+  
+  // Check if trip name contains a known region
+  for (const [region, cities] of Object.entries(REGION_CITIES)) {
+    if (nameLower.includes(region)) {
+      return cities
+    }
+  }
+  
+  // Default popular cities
+  return ['Paris', 'Barcelona', 'Rome', 'Tokyo', 'New York']
+}
+
 export default function TripsPage() {
   const { user, session, loading: authLoading } = useAuth()
   const [itineraries, setItineraries] = useState<Itinerary[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [newTripName, setNewTripName] = useState('')
+  const [newTripStartDate, setNewTripStartDate] = useState('')
+  const [newTripEndDate, setNewTripEndDate] = useState('')
   const [creating, setCreating] = useState(false)
+  const [tripDates, setTripDates] = useState<Record<string, { start: string; end: string }>>({})
+  const [duplicating, setDuplicating] = useState<string | null>(null)
+  const [editingDates, setEditingDates] = useState<string | null>(null)
+  const [editStartDate, setEditStartDate] = useState('')
+  const [editEndDate, setEditEndDate] = useState('')
   const [expandedTrip, setExpandedTrip] = useState<string | null>(null)
   const [editingNote, setEditingNote] = useState<string | null>(null)
   const [noteText, setNoteText] = useState('')
@@ -33,7 +82,45 @@ export default function TripsPage() {
   const [shareUrl, setShareUrl] = useState<string | null>(null)
   const [showShareModal, setShowShareModal] = useState(false)
   const [sharingTrip, setSharingTrip] = useState<Itinerary | null>(null)
+  const [showOptimizeModal, setShowOptimizeModal] = useState(false)
+  const [optimizingTrip, setOptimizingTrip] = useState<Itinerary | null>(null)
+  const [showTravelInfoModal, setShowTravelInfoModal] = useState(false)
+  const [travelInfoTrip, setTravelInfoTrip] = useState<Itinerary | null>(null)
+  const [tripNotes, setTripNotes] = useState('')
+  const [dayTravelInfo, setDayTravelInfo] = useState<Record<string, { flight: string; hotel: string }>>({})
+  const [editingDayInfo, setEditingDayInfo] = useState<string | null>(null)
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  const [completedTrips, setCompletedTrips] = useState<Set<string>>(new Set())
+  const [archivedTrips, setArchivedTrips] = useState<Set<string>>(new Set())
+  const [showArchived, setShowArchived] = useState(false)
   const noteInputRef = useRef<HTMLTextAreaElement>(null)
+
+  // Load completed/archived status and trip dates from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('wanderlist-trip-status')
+    if (saved) {
+      const { completed, archived } = JSON.parse(saved)
+      setCompletedTrips(new Set(completed || []))
+      setArchivedTrips(new Set(archived || []))
+    }
+    const savedDates = localStorage.getItem('wanderlist-trip-dates')
+    if (savedDates) {
+      setTripDates(JSON.parse(savedDates))
+    }
+  }, [])
+
+  // Save completed/archived status to localStorage
+  useEffect(() => {
+    localStorage.setItem('wanderlist-trip-status', JSON.stringify({
+      completed: Array.from(completedTrips),
+      archived: Array.from(archivedTrips),
+    }))
+  }, [completedTrips, archivedTrips])
+
+  // Save trip dates to localStorage
+  useEffect(() => {
+    localStorage.setItem('wanderlist-trip-dates', JSON.stringify(tripDates))
+  }, [tripDates])
 
   useEffect(() => {
     if (user && session) {
@@ -48,6 +135,17 @@ export default function TripsPage() {
       noteInputRef.current.focus()
     }
   }, [editingNote])
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside() {
+      setOpenMenuId(null)
+    }
+    if (openMenuId) {
+      document.addEventListener('click', handleClickOutside)
+      return () => document.removeEventListener('click', handleClickOutside)
+    }
+  }, [openMenuId])
 
   async function fetchItineraries() {
     try {
@@ -80,7 +178,17 @@ export default function TripsPage() {
       })
       
       if (response.ok) {
+        const data = await response.json()
+        // Save dates if provided
+        if (newTripStartDate || newTripEndDate) {
+          setTripDates(prev => ({
+            ...prev,
+            [data.itinerary.id]: { start: newTripStartDate, end: newTripEndDate }
+          }))
+        }
         setNewTripName('')
+        setNewTripStartDate('')
+        setNewTripEndDate('')
         setShowCreateModal(false)
         fetchItineraries()
       }
@@ -88,6 +196,67 @@ export default function TripsPage() {
       console.error('Failed to create itinerary:', error)
     } finally {
       setCreating(false)
+    }
+  }
+
+  async function duplicateTrip(itinerary: Itinerary) {
+    setDuplicating(itinerary.id)
+    try {
+      // Create new itinerary with copied name
+      const response = await fetch('/api/itineraries', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ name: `${itinerary.name} (Copy)` }),
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        const newItineraryId = data.itinerary.id
+        
+        // Copy all saved places
+        if (itinerary.saved_places && itinerary.saved_places.length > 0) {
+          for (const place of itinerary.saved_places) {
+            await fetch('/api/saved-places', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${session?.access_token}`,
+              },
+              body: JSON.stringify({
+                itinerary_id: newItineraryId,
+                place_id: place.place_id,
+                name: place.name,
+                category: place.category,
+                address: place.address,
+                city: place.city,
+                lat: place.lat,
+                lon: place.lon,
+                notes: place.notes,
+                day_number: place.day_number,
+                sort_order: place.sort_order,
+              }),
+            })
+          }
+        }
+        
+        // Copy dates if they exist
+        if (tripDates[itinerary.id]) {
+          setTripDates(prev => ({
+            ...prev,
+            [newItineraryId]: { ...tripDates[itinerary.id] }
+          }))
+        }
+        
+        fetchItineraries()
+      }
+    } catch (error) {
+      console.error('Failed to duplicate trip:', error)
+    } finally {
+      setDuplicating(null)
+      setOpenMenuId(null)
     }
   }
 
@@ -102,10 +271,107 @@ export default function TripsPage() {
       
       if (response.ok) {
         fetchItineraries()
+        // Clean up local status
+        setCompletedTrips(prev => { prev.delete(id); return new Set(prev) })
+        setArchivedTrips(prev => { prev.delete(id); return new Set(prev) })
       }
     } catch (error) {
       console.error('Failed to delete itinerary:', error)
     }
+  }
+
+  function toggleCompleted(id: string) {
+    setCompletedTrips(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(id)) {
+        newSet.delete(id)
+      } else {
+        newSet.add(id)
+      }
+      return newSet
+    })
+  }
+
+  function toggleArchived(id: string) {
+    setArchivedTrips(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(id)) {
+        newSet.delete(id)
+      } else {
+        newSet.add(id)
+      }
+      return newSet
+    })
+  }
+
+  async function swapDays(itinerary: Itinerary, day1: number, day2: number) {
+    const places = itinerary.saved_places || []
+    const updates: Promise<Response>[] = []
+    
+    for (const place of places) {
+      if (place.day_number === day1) {
+        updates.push(
+          fetch('/api/saved-places', {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session?.access_token}`,
+            },
+            body: JSON.stringify({ id: place.id, day_number: day2 }),
+          })
+        )
+      } else if (place.day_number === day2) {
+        updates.push(
+          fetch('/api/saved-places', {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session?.access_token}`,
+            },
+            body: JSON.stringify({ id: place.id, day_number: day1 }),
+          })
+        )
+      }
+    }
+    
+    await Promise.all(updates)
+    fetchItineraries()
+  }
+
+  function getCountdown(tripId: string): string | null {
+    const dates = tripDates[tripId]
+    if (!dates?.start) return null
+    
+    const start = new Date(dates.start)
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    start.setHours(0, 0, 0, 0)
+    
+    const diff = Math.ceil((start.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+    
+    if (diff < 0) return null
+    if (diff === 0) return "Today!"
+    if (diff === 1) return "Tomorrow!"
+    return `In ${diff} days`
+  }
+
+  function formatDateRange(tripId: string): string | null {
+    const dates = tripDates[tripId]
+    if (!dates?.start) return null
+    
+    const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' }
+    const start = new Date(dates.start).toLocaleDateString('en-US', options)
+    
+    if (dates.end) {
+      const endDate = new Date(dates.end)
+      const startDate = new Date(dates.start)
+      const endOptions: Intl.DateTimeFormatOptions = startDate.getFullYear() === endDate.getFullYear() && startDate.getMonth() === endDate.getMonth()
+        ? { day: 'numeric' }
+        : { month: 'short', day: 'numeric' }
+      const end = endDate.toLocaleDateString('en-US', endOptions)
+      return `${start} - ${end}`
+    }
+    return start
   }
 
   async function removePlace(placeId: string) {
@@ -244,6 +510,37 @@ export default function TripsPage() {
     }
     
     alert('Route optimized! Places are now ordered by proximity.')
+    fetchItineraries()
+  }
+
+  async function optimizeEntireTrip(itinerary: Itinerary) {
+    const places = itinerary.saved_places || []
+    if (places.length === 0) return
+
+    // Group places by city
+    const byCity: Record<string, SavedPlace[]> = {}
+    places.forEach(place => {
+      const city = place.city || 'Unknown'
+      if (!byCity[city]) byCity[city] = []
+      byCity[city].push(place)
+    })
+
+    // Assign days - one city at a time, optimized within each city
+    let currentDay = 1
+    const cityNames = Object.keys(byCity)
+    
+    for (const cityName of cityNames) {
+      const cityPlaces = byCity[cityName]
+      const optimized = optimizeRoute(cityPlaces)
+      
+      for (const place of optimized) {
+        await updatePlace(place.id, { day_number: currentDay })
+      }
+      currentDay++
+    }
+
+    setShowOptimizeModal(false)
+    setOptimizingTrip(null)
     fetchItineraries()
   }
 
@@ -401,22 +698,78 @@ export default function TripsPage() {
             </button>
           </div>
         ) : (
-          <div className="space-y-6">
-            {itineraries.map((itinerary) => {
-              const cities = getCitiesFromPlaces(itinerary)
-              const isExpanded = expandedTrip === itinerary.id
-              const dayGroups = groupByDay(itinerary.saved_places || [])
-              const maxDay = getMaxDay(itinerary)
-              
-              return (
-                <div key={itinerary.id} className="bg-white border border-cream-300 rounded-xl overflow-hidden">
+          <>
+            {/* Active Trips */}
+            {itineraries.filter(i => !completedTrips.has(i.id) && !archivedTrips.has(i.id)).length > 0 && (
+              <div className="mb-8">
+                <h2 className="text-sm font-medium text-stone-500 uppercase tracking-wider mb-4">
+                  <i className="fa-solid fa-suitcase-rolling mr-2"></i>
+                  Upcoming Trips
+                </h2>
+                <div className="space-y-4">
+                  {itineraries.filter(i => !completedTrips.has(i.id) && !archivedTrips.has(i.id)).map((itinerary) => {
+                    const cities = getCitiesFromPlaces(itinerary)
+                    const isExpanded = expandedTrip === itinerary.id
+                    const dayGroups = groupByDay(itinerary.saved_places || [])
+                    const maxDay = getMaxDay(itinerary)
+                    
+                    return (
+                <div key={itinerary.id} className="bg-white border border-cream-300 rounded-xl">
                   <div 
                     className="p-5 border-b border-cream-200 cursor-pointer hover:bg-cream-50 transition-colors"
                     onClick={() => setExpandedTrip(isExpanded ? null : itinerary.id)}
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
-                        <h3 className="font-serif text-xl text-stone-900">{itinerary.name}</h3>
+                        <div className="flex items-center gap-3">
+                          <h3 className="font-serif text-xl text-stone-900">{itinerary.name}</h3>
+                          {getCountdown(itinerary.id) && (
+                            <span className="bg-amber-100 text-amber-700 text-xs font-medium px-2 py-0.5 rounded-full">
+                              {getCountdown(itinerary.id)}
+                            </span>
+                          )}
+                        </div>
+                        {editingDates === itinerary.id ? (
+                          <div className="flex items-center gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="date"
+                              value={editStartDate}
+                              onChange={(e) => setEditStartDate(e.target.value)}
+                              className="text-xs px-2 py-1 border border-cream-300 rounded bg-white"
+                            />
+                            <span className="text-stone-400">to</span>
+                            <input
+                              type="date"
+                              value={editEndDate}
+                              onChange={(e) => setEditEndDate(e.target.value)}
+                              min={editStartDate}
+                              className="text-xs px-2 py-1 border border-cream-300 rounded bg-white"
+                            />
+                            <button
+                              onClick={() => {
+                                setTripDates(prev => ({
+                                  ...prev,
+                                  [itinerary.id]: { start: editStartDate, end: editEndDate }
+                                }))
+                                setEditingDates(null)
+                              }}
+                              className="text-green-600 hover:text-green-700 p-1"
+                            >
+                              <i className="fa-solid fa-check"></i>
+                            </button>
+                            <button
+                              onClick={() => setEditingDates(null)}
+                              className="text-stone-400 hover:text-stone-600 p-1"
+                            >
+                              <i className="fa-solid fa-xmark"></i>
+                            </button>
+                          </div>
+                        ) : formatDateRange(itinerary.id) ? (
+                          <p className="text-stone-500 text-sm flex items-center gap-1.5 mt-1">
+                            <i className="fa-regular fa-calendar"></i>
+                            {formatDateRange(itinerary.id)}
+                          </p>
+                        ) : null}
                         {cities.length > 0 && (
                           <p className="text-stone-500 text-sm flex items-center gap-1.5 mt-1">
                             <i className="fa-solid fa-location-dot"></i>
@@ -433,38 +786,125 @@ export default function TripsPage() {
                           )}
                         </p>
                       </div>
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-2">
+                        {/* Mark Complete Button */}
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
-                            exportToPDF(itinerary)
+                            toggleCompleted(itinerary.id)
                           }}
-                          className="text-stone-400 hover:text-stone-600 transition-colors p-2"
-                          title="Export to PDF"
+                          className="text-stone-400 hover:text-green-600 transition-colors p-2"
+                          title="Mark as complete"
                         >
-                          <i className="fa-solid fa-file-pdf"></i>
+                          <i className="fa-solid fa-circle-check"></i>
                         </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            shareTrip(itinerary)
-                          }}
-                          className="text-stone-400 hover:text-stone-600 transition-colors p-2"
-                          title="Share trip"
-                        >
-                          <i className="fa-solid fa-share-nodes"></i>
-                        </button>
-                        <i className={`fa-solid fa-chevron-${isExpanded ? 'up' : 'down'} text-stone-400 px-2`}></i>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            deleteItinerary(itinerary.id)
-                          }}
-                          className="text-stone-400 hover:text-red-500 transition-colors p-2"
-                          title="Delete trip"
-                        >
-                          <i className="fa-solid fa-trash"></i>
-                        </button>
+                        
+                        {/* More Actions Dropdown */}
+                        <div className="relative">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setOpenMenuId(openMenuId === itinerary.id ? null : itinerary.id)
+                            }}
+                            className="text-stone-400 hover:text-stone-600 transition-colors p-2"
+                          >
+                            <i className="fa-solid fa-ellipsis"></i>
+                          </button>
+                          
+                          {openMenuId === itinerary.id && (
+                            <div 
+                              className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-cream-200 py-1 z-50 min-w-[160px]"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <button
+                                onClick={() => {
+                                  setEditingDates(itinerary.id)
+                                  setEditStartDate(tripDates[itinerary.id]?.start || '')
+                                  setEditEndDate(tripDates[itinerary.id]?.end || '')
+                                  setOpenMenuId(null)
+                                }}
+                                className="w-full text-left px-4 py-2 text-sm text-stone-600 hover:bg-cream-100 flex items-center gap-3"
+                              >
+                                <i className="fa-regular fa-calendar w-4"></i>
+                                Edit Dates
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setTravelInfoTrip(itinerary)
+                                  setShowTravelInfoModal(true)
+                                  setOpenMenuId(null)
+                                }}
+                                className="w-full text-left px-4 py-2 text-sm text-stone-600 hover:bg-cream-100 flex items-center gap-3"
+                              >
+                                <i className="fa-solid fa-clipboard-list w-4"></i>
+                                Trip Notes
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setOptimizingTrip(itinerary)
+                                  setShowOptimizeModal(true)
+                                  setOpenMenuId(null)
+                                }}
+                                className="w-full text-left px-4 py-2 text-sm text-stone-600 hover:bg-cream-100 flex items-center gap-3"
+                              >
+                                <i className="fa-solid fa-wand-magic-sparkles w-4"></i>
+                                Optimize Trip
+                              </button>
+                              <button
+                                onClick={() => {
+                                  exportToPDF(itinerary)
+                                  setOpenMenuId(null)
+                                }}
+                                className="w-full text-left px-4 py-2 text-sm text-stone-600 hover:bg-cream-100 flex items-center gap-3"
+                              >
+                                <i className="fa-solid fa-file-pdf w-4"></i>
+                                Export PDF
+                              </button>
+                              <button
+                                onClick={() => {
+                                  shareTrip(itinerary)
+                                  setOpenMenuId(null)
+                                }}
+                                className="w-full text-left px-4 py-2 text-sm text-stone-600 hover:bg-cream-100 flex items-center gap-3"
+                              >
+                                <i className="fa-solid fa-share-nodes w-4"></i>
+                                Share Trip
+                              </button>
+                              <button
+                                onClick={() => duplicateTrip(itinerary)}
+                                disabled={duplicating === itinerary.id}
+                                className="w-full text-left px-4 py-2 text-sm text-stone-600 hover:bg-cream-100 flex items-center gap-3 disabled:opacity-50"
+                              >
+                                <i className={`fa-solid ${duplicating === itinerary.id ? 'fa-circle-notch animate-spin' : 'fa-copy'} w-4`}></i>
+                                {duplicating === itinerary.id ? 'Duplicating...' : 'Duplicate Trip'}
+                              </button>
+                              <div className="border-t border-cream-200 my-1"></div>
+                              <button
+                                onClick={() => {
+                                  toggleArchived(itinerary.id)
+                                  setOpenMenuId(null)
+                                }}
+                                className="w-full text-left px-4 py-2 text-sm text-stone-600 hover:bg-cream-100 flex items-center gap-3"
+                              >
+                                <i className="fa-solid fa-box-archive w-4"></i>
+                                Archive
+                              </button>
+                              <button
+                                onClick={() => {
+                                  deleteItinerary(itinerary.id)
+                                  setOpenMenuId(null)
+                                }}
+                                className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-red-50 flex items-center gap-3"
+                              >
+                                <i className="fa-solid fa-trash w-4"></i>
+                                Delete
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        
+                        {/* Expand/Collapse */}
+                        <i className={`fa-solid fa-chevron-${isExpanded ? 'up' : 'down'} text-stone-400`}></i>
                       </div>
                     </div>
                   </div>
@@ -487,10 +927,46 @@ export default function TripsPage() {
                               className="bg-cream-50 rounded-lg overflow-hidden border border-cream-200"
                             >
                               <div className="flex items-center justify-between px-4 py-2 bg-cream-100 border-b border-cream-200">
-                                <h4 className="font-medium text-stone-700 text-sm">
-                                  {day === 0 ? 'Unscheduled' : `Day ${day}`}
-                                </h4>
                                 <div className="flex items-center gap-2">
+                                  <h4 className="font-medium text-stone-700 text-sm">
+                                    {day === 0 ? 'Unscheduled' : `Day ${day}`}
+                                  </h4>
+                                  {/* Day reorder buttons */}
+                                  {day > 0 && maxDay > 1 && (
+                                    <div className="flex items-center gap-0.5 ml-1">
+                                      <button
+                                        onClick={() => day > 1 && swapDays(itinerary, day, day - 1)}
+                                        disabled={day <= 1}
+                                        className={`p-1 rounded ${day > 1 ? 'text-stone-400 hover:text-stone-600 hover:bg-cream-200' : 'text-stone-200 cursor-not-allowed'}`}
+                                        title="Move day up"
+                                      >
+                                        <i className="fa-solid fa-chevron-up text-xs"></i>
+                                      </button>
+                                      <button
+                                        onClick={() => day < maxDay && swapDays(itinerary, day, day + 1)}
+                                        disabled={day >= maxDay}
+                                        className={`p-1 rounded ${day < maxDay ? 'text-stone-400 hover:text-stone-600 hover:bg-cream-200' : 'text-stone-200 cursor-not-allowed'}`}
+                                        title="Move day down"
+                                      >
+                                        <i className="fa-solid fa-chevron-down text-xs"></i>
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  {day > 0 && (
+                                    <button
+                                      onClick={() => setEditingDayInfo(editingDayInfo === `${itinerary.id}-${day}` ? null : `${itinerary.id}-${day}`)}
+                                      className={`text-xs flex items-center gap-1 ${
+                                        dayTravelInfo[`${itinerary.id}-${day}`]?.flight || dayTravelInfo[`${itinerary.id}-${day}`]?.hotel
+                                          ? 'text-blue-600 hover:text-blue-700'
+                                          : 'text-stone-400 hover:text-stone-600'
+                                      }`}
+                                      title="Add flight/hotel"
+                                    >
+                                      <i className="fa-solid fa-plane-departure"></i>
+                                    </button>
+                                  )}
                                   {day > 0 && places.length > 1 && (
                                     <button
                                       onClick={() => applyOptimizedRoute(itinerary, day)}
@@ -504,6 +980,66 @@ export default function TripsPage() {
                                   <span className="text-xs text-stone-400">{places.length} places</span>
                                 </div>
                               </div>
+
+                              {/* Day travel info (flight/hotel) */}
+                              {day > 0 && (editingDayInfo === `${itinerary.id}-${day}` || dayTravelInfo[`${itinerary.id}-${day}`]?.flight || dayTravelInfo[`${itinerary.id}-${day}`]?.hotel) && (
+                                <div className="px-4 py-3 bg-blue-50 border-b border-blue-100">
+                                  {editingDayInfo === `${itinerary.id}-${day}` ? (
+                                    <div className="space-y-2">
+                                      <div className="flex items-center gap-2">
+                                        <i className="fa-solid fa-plane text-blue-500 text-xs w-4"></i>
+                                        <input
+                                          type="text"
+                                          placeholder="Flight info (e.g., UA123 departs 10am)"
+                                          value={dayTravelInfo[`${itinerary.id}-${day}`]?.flight || ''}
+                                          onChange={(e) => setDayTravelInfo(prev => ({
+                                            ...prev,
+                                            [`${itinerary.id}-${day}`]: { ...prev[`${itinerary.id}-${day}`], flight: e.target.value }
+                                          }))}
+                                          className="flex-1 text-xs bg-white border border-blue-200 rounded px-2 py-1.5"
+                                        />
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <i className="fa-solid fa-hotel text-green-500 text-xs w-4"></i>
+                                        <input
+                                          type="text"
+                                          placeholder="Hotel info (e.g., Hotel Arts, Conf #ABC123)"
+                                          value={dayTravelInfo[`${itinerary.id}-${day}`]?.hotel || ''}
+                                          onChange={(e) => setDayTravelInfo(prev => ({
+                                            ...prev,
+                                            [`${itinerary.id}-${day}`]: { ...prev[`${itinerary.id}-${day}`], hotel: e.target.value }
+                                          }))}
+                                          className="flex-1 text-xs bg-white border border-blue-200 rounded px-2 py-1.5"
+                                        />
+                                      </div>
+                                      <button
+                                        onClick={() => setEditingDayInfo(null)}
+                                        className="text-xs text-blue-600 hover:text-blue-700"
+                                      >
+                                        Done
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div 
+                                      className="space-y-1 cursor-pointer"
+                                      onClick={() => setEditingDayInfo(`${itinerary.id}-${day}`)}
+                                    >
+                                      {dayTravelInfo[`${itinerary.id}-${day}`]?.flight && (
+                                        <p className="text-xs text-blue-700">
+                                          <i className="fa-solid fa-plane mr-2"></i>
+                                          {dayTravelInfo[`${itinerary.id}-${day}`].flight}
+                                        </p>
+                                      )}
+                                      {dayTravelInfo[`${itinerary.id}-${day}`]?.hotel && (
+                                        <p className="text-xs text-green-700">
+                                          <i className="fa-solid fa-hotel mr-2"></i>
+                                          {dayTravelInfo[`${itinerary.id}-${day}`].hotel}
+                                        </p>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                               
                               <div className="divide-y divide-cream-200">
                                 {places.map((place) => (
@@ -586,9 +1122,10 @@ export default function TripsPage() {
                                           className="text-xs bg-cream-100 border border-cream-300 rounded px-2 py-1 text-stone-600"
                                         >
                                           <option value={0}>No day</option>
-                                          {[...Array(maxDay + 2)].map((_, i) => (
+                                          {maxDay > 0 && [...Array(maxDay)].map((_, i) => (
                                             <option key={i + 1} value={i + 1}>Day {i + 1}</option>
                                           ))}
+                                          <option value={maxDay + 1}>+ Day {maxDay + 1}</option>
                                         </select>
                                         <button
                                           onClick={() => removePlace(place.id)}
@@ -621,16 +1158,139 @@ export default function TripsPage() {
                           </button>
                         </div>
                       ) : (
-                        <p className="text-stone-400 text-sm text-center py-8">
-                          No places saved yet. Search for a city and save places to this trip!
-                        </p>
+                        <div className="text-center py-8">
+                          <p className="text-stone-500 mb-4">No places saved yet. Start exploring!</p>
+                          <p className="text-xs text-stone-400 mb-3">Popular cities to get started:</p>
+                          <div className="flex flex-wrap justify-center gap-2">
+                            {getSuggestedCities(itinerary.name).map((city) => (
+                              <a
+                                key={city}
+                                href={`/?search=${encodeURIComponent(city)}`}
+                                className="px-3 py-1.5 bg-white border border-cream-300 rounded-full text-sm text-stone-600 hover:border-stone-400 hover:text-stone-800 transition-colors"
+                              >
+                                {city}
+                              </a>
+                            ))}
+                          </div>
+                        </div>
                       )}
                     </div>
                   )}
                 </div>
-              )
-            })}
-          </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Completed Trips */}
+            {itineraries.filter(i => completedTrips.has(i.id) && !archivedTrips.has(i.id)).length > 0 && (
+              <div className="mb-8">
+                <h2 className="text-sm font-medium text-stone-500 uppercase tracking-wider mb-4">
+                  <i className="fa-solid fa-circle-check mr-2 text-green-500"></i>
+                  Completed Trips
+                </h2>
+                <div className="space-y-4">
+                  {itineraries.filter(i => completedTrips.has(i.id) && !archivedTrips.has(i.id)).map((itinerary) => {
+                    const cities = getCitiesFromPlaces(itinerary)
+                    return (
+                      <div key={itinerary.id} className="bg-white/60 border border-cream-300 rounded-xl p-5">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-serif text-xl text-stone-700">{itinerary.name}</h3>
+                              <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Completed</span>
+                            </div>
+                            {cities.length > 0 && (
+                              <p className="text-stone-400 text-sm flex items-center gap-1.5 mt-1">
+                                <i className="fa-solid fa-location-dot"></i>
+                                {cities.join(', ')}
+                              </p>
+                            )}
+                            <p className="text-stone-400 text-xs mt-1">
+                              {itinerary.saved_places?.length || 0} places
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => toggleCompleted(itinerary.id)}
+                              className="text-stone-400 hover:text-stone-600 transition-colors p-2"
+                              title="Mark as active"
+                            >
+                              <i className="fa-solid fa-rotate-left"></i>
+                            </button>
+                            <button
+                              onClick={() => toggleArchived(itinerary.id)}
+                              className="text-stone-400 hover:text-stone-600 transition-colors p-2"
+                              title="Archive"
+                            >
+                              <i className="fa-solid fa-box-archive"></i>
+                            </button>
+                            <button
+                              onClick={() => setExpandedTrip(expandedTrip === itinerary.id ? null : itinerary.id)}
+                              className="text-stone-400 p-2"
+                            >
+                              <i className={`fa-solid fa-chevron-${expandedTrip === itinerary.id ? 'up' : 'down'}`}></i>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Archived Trips Toggle */}
+            {itineraries.filter(i => archivedTrips.has(i.id)).length > 0 && (
+              <div className="border-t border-cream-300 pt-6">
+                <button
+                  onClick={() => setShowArchived(!showArchived)}
+                  className="text-sm text-stone-400 hover:text-stone-600 flex items-center gap-2"
+                >
+                  <i className={`fa-solid fa-chevron-${showArchived ? 'up' : 'down'}`}></i>
+                  <i className="fa-solid fa-box-archive"></i>
+                  {showArchived ? 'Hide' : 'Show'} archived trips ({itineraries.filter(i => archivedTrips.has(i.id)).length})
+                </button>
+                
+                {showArchived && (
+                  <div className="mt-4 space-y-3">
+                    {itineraries.filter(i => archivedTrips.has(i.id)).map((itinerary) => {
+                      const cities = getCitiesFromPlaces(itinerary)
+                      return (
+                        <div key={itinerary.id} className="bg-cream-50 border border-cream-200 rounded-lg p-4 opacity-60">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <h3 className="font-medium text-stone-600">{itinerary.name}</h3>
+                              {cities.length > 0 && (
+                                <p className="text-stone-400 text-xs">{cities.join(', ')}</p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => toggleArchived(itinerary.id)}
+                                className="text-stone-400 hover:text-stone-600 transition-colors p-2 text-sm"
+                                title="Unarchive"
+                              >
+                                <i className="fa-solid fa-box-open"></i>
+                              </button>
+                              <button
+                                onClick={() => deleteItinerary(itinerary.id)}
+                                className="text-stone-400 hover:text-red-500 transition-colors p-2 text-sm"
+                                title="Delete permanently"
+                              >
+                                <i className="fa-solid fa-trash"></i>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -653,6 +1313,27 @@ export default function TripsPage() {
                   placeholder="Summer Europe Adventure"
                   onKeyDown={(e) => e.key === 'Enter' && createItinerary()}
                 />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-stone-500 mb-1">Start date (optional)</label>
+                    <input
+                      type="date"
+                      value={newTripStartDate}
+                      onChange={(e) => setNewTripStartDate(e.target.value)}
+                      className="input-field w-full px-3 py-2 rounded-md text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-stone-500 mb-1">End date (optional)</label>
+                    <input
+                      type="date"
+                      value={newTripEndDate}
+                      onChange={(e) => setNewTripEndDate(e.target.value)}
+                      min={newTripStartDate}
+                      className="input-field w-full px-3 py-2 rounded-md text-sm"
+                    />
+                  </div>
+                </div>
                 <button
                   onClick={createItinerary}
                   disabled={creating || !newTripName.trim()}
@@ -701,6 +1382,101 @@ export default function TripsPage() {
               >
                 <i className="fa-solid fa-link-slash mr-1"></i>
                 Remove share link
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Optimize Entire Trip Modal */}
+      {showOptimizeModal && optimizingTrip && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowOptimizeModal(false)}></div>
+          <div className="relative bg-cream-50 rounded-xl shadow-2xl w-full max-w-md mx-4">
+            <button onClick={() => setShowOptimizeModal(false)} className="absolute top-4 right-4 text-stone-400 hover:text-stone-600">
+              <i className="fa-solid fa-xmark text-xl"></i>
+            </button>
+            <div className="p-8">
+              <div className="w-14 h-14 rounded-full bg-purple-100 flex items-center justify-center mx-auto mb-4">
+                <i className="fa-solid fa-wand-magic-sparkles text-2xl text-purple-600"></i>
+              </div>
+              <h2 className="text-2xl font-serif text-stone-900 mb-2 text-center">Optimize Trip</h2>
+              <p className="text-stone-500 text-sm mb-6 text-center">
+                This will reorganize your entire trip so you visit one city at a time, 
+                with places optimized by proximity within each city.
+              </p>
+              
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
+                <p className="text-amber-800 text-sm">
+                  <i className="fa-solid fa-triangle-exclamation mr-2"></i>
+                  This will reassign all places to new days. Your current day assignments will be replaced.
+                </p>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowOptimizeModal(false)}
+                  className="flex-1 py-3 rounded-lg font-medium border border-cream-300 text-stone-600 hover:bg-cream-100 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => optimizeEntireTrip(optimizingTrip)}
+                  className="flex-1 btn-primary py-3 rounded-lg font-medium"
+                >
+                  Optimize
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Trip Notes Modal */}
+      {showTravelInfoModal && travelInfoTrip && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowTravelInfoModal(false)}></div>
+          <div className="relative bg-cream-50 rounded-xl shadow-2xl w-full max-w-lg mx-4">
+            <button onClick={() => setShowTravelInfoModal(false)} className="absolute top-4 right-4 text-stone-400 hover:text-stone-600">
+              <i className="fa-solid fa-xmark text-xl"></i>
+            </button>
+            <div className="p-8">
+              <h2 className="text-2xl font-serif text-stone-900 mb-2">Trip Notes</h2>
+              <p className="text-stone-500 text-sm mb-6">Add general notes for "{travelInfoTrip.name}".</p>
+              
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                <p className="text-blue-700 text-sm">
+                  <i className="fa-solid fa-lightbulb mr-2"></i>
+                  <strong>Tip:</strong> Add flight and hotel info directly to each day using the <i className="fa-solid fa-plane-departure mx-1"></i> icon in the day header.
+                </p>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-stone-700 mb-2">
+                  <i className="fa-solid fa-note-sticky mr-2 text-amber-500"></i>
+                  Travel Notes
+                </label>
+                <textarea
+                  value={tripNotes}
+                  onChange={(e) => setTripNotes(e.target.value)}
+                  placeholder="e.g., Travel insurance policy #, emergency contacts, packing list, restaurant reservations..."
+                  className="input-field w-full px-4 py-3 rounded-lg resize-none"
+                  rows={6}
+                />
+              </div>
+
+              <div className="mt-6 pt-4 border-t border-cream-200">
+                <p className="text-xs text-stone-400 text-center">
+                  <i className="fa-solid fa-info-circle mr-1"></i>
+                  Notes are saved locally and included in your PDF export.
+                </p>
+              </div>
+              
+              <button
+                onClick={() => setShowTravelInfoModal(false)}
+                className="btn-primary w-full py-3 rounded-lg font-medium mt-4"
+              >
+                Save Notes
               </button>
             </div>
           </div>

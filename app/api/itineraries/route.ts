@@ -1,13 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { sanitizeInput, checkRateLimit, getClientIP, isValidAuthToken } from '@/lib/security'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 export async function GET(request: NextRequest) {
+  // Rate limiting
+  const clientIP = getClientIP(request)
+  const rateLimit = checkRateLimit(`itineraries:${clientIP}`, 60, 60000)
+  if (!rateLimit.allowed) {
+    return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
+  }
+
   const authHeader = request.headers.get('authorization')
   if (!authHeader) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // Validate token format
+  const token = authHeader.replace('Bearer ', '')
+  if (!isValidAuthToken(token)) {
+    return NextResponse.json({ error: 'Invalid token format' }, { status: 401 })
   }
 
   const supabase = createClient(supabaseUrl, supabaseAnonKey, {
@@ -36,9 +50,21 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  // Rate limiting
+  const clientIP = getClientIP(request)
+  const rateLimit = checkRateLimit(`itineraries:${clientIP}`, 30, 60000)
+  if (!rateLimit.allowed) {
+    return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
+  }
+
   const authHeader = request.headers.get('authorization')
   if (!authHeader) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const token = authHeader.replace('Bearer ', '')
+  if (!isValidAuthToken(token)) {
+    return NextResponse.json({ error: 'Invalid token format' }, { status: 401 })
   }
 
   const supabase = createClient(supabaseUrl, supabaseAnonKey, {
@@ -51,10 +77,16 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json()
-  const { name } = body
+  const rawName = body.name
 
-  if (!name) {
+  if (!rawName) {
     return NextResponse.json({ error: 'Name is required' }, { status: 400 })
+  }
+
+  // Sanitize input
+  const name = sanitizeInput(rawName)
+  if (name.length < 1 || name.length > 200) {
+    return NextResponse.json({ error: 'Invalid name length' }, { status: 400 })
   }
 
   const { data, error } = await supabase

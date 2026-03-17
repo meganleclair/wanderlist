@@ -150,11 +150,36 @@ export default function EmptyState({ onCityClick }: EmptyStateProps) {
         </div>
       )}
 
-      {/* Pick Your Vibe */}
+      {/* Trip Quiz CTA */}
+      <div className="mb-12">
+        <a 
+          href="/quiz"
+          className="block relative overflow-hidden rounded-2xl bg-gradient-to-r from-teal-50 to-emerald-50 border border-teal-200 p-6 hover:shadow-lg transition-shadow"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="bg-teal-500 text-white text-xs font-bold px-2 py-1 rounded">NEW</span>
+                <span className="text-teal-700 text-sm font-medium">Trip Quiz</span>
+              </div>
+              <h3 className="font-serif text-2xl text-stone-900 mb-1">Plan my perfect trip</h3>
+              <p className="text-stone-500">Answer 5 questions and get a personalized itinerary</p>
+            </div>
+            <div className="hidden sm:flex items-center gap-3">
+              <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-sm">
+                <i className="fa-solid fa-wand-magic-sparkles text-teal-500 text-xl"></i>
+              </div>
+              <i className="fa-solid fa-arrow-right text-stone-400"></i>
+            </div>
+          </div>
+        </a>
+      </div>
+
+      {/* Pick Your Vibe - Quick Random Pick */}
       <div className="mb-12">
         <div className="text-center mb-6">
-          <p className="text-xs uppercase tracking-widest text-stone-400 mb-1">Not sure where to go?</p>
-          <h2 className="font-serif text-2xl text-stone-900">Pick Your Vibe</h2>
+          <p className="text-xs uppercase tracking-widest text-stone-400 mb-1">Feeling adventurous?</p>
+          <h2 className="font-serif text-2xl text-stone-900">Surprise Me</h2>
         </div>
         
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

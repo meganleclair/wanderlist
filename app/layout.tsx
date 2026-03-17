@@ -3,8 +3,30 @@ import { AuthProvider } from '@/lib/AuthContext'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Wanderlist - Discover Things To Do',
-  description: 'Find the best attractions and hidden gems in any city',
+  title: {
+    default: 'Wanderlist - Plan Your Perfect Trip',
+    template: '%s | Wanderlist'
+  },
+  description: 'Discover amazing places, create custom itineraries, and plan unforgettable trips. Find top attractions and hidden gems in cities around the world.',
+  keywords: ['travel', 'trip planner', 'itinerary', 'vacation', 'travel guide', 'things to do', 'attractions'],
+  authors: [{ name: 'Wanderlist' }],
+  creator: 'Wanderlist',
+  openGraph: {
+    type: 'website',
+    locale: 'en_US',
+    siteName: 'Wanderlist',
+    title: 'Wanderlist - Plan Your Perfect Trip',
+    description: 'Discover amazing places, create custom itineraries, and plan unforgettable trips.',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Wanderlist - Plan Your Perfect Trip',
+    description: 'Discover amazing places, create custom itineraries, and plan unforgettable trips.',
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 }
 
 export default function RootLayout({
@@ -15,6 +37,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        <link rel="icon" href="/favicon.ico" sizes="any" />
         <link
           rel="stylesheet"
           href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"

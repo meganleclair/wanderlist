@@ -31,6 +31,9 @@ export default function Navigation() {
               </a>
               <div className="hidden md:flex items-center gap-6">
                 <a href="/" className="text-sm text-stone-600 hover:text-stone-900 transition-colors">
+                  Search
+                </a>
+                <a href="/discover" className="text-sm text-stone-600 hover:text-stone-900 transition-colors">
                   Discover
                 </a>
                 {user && (

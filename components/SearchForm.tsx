@@ -11,7 +11,6 @@ export default function SearchForm({ onSearch, isLoading }: SearchFormProps) {
   const [city, setCity] = useState('')
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
-  const [locatingUser, setLocatingUser] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const suggestionsRef = useRef<HTMLDivElement>(null)
 
@@ -63,39 +62,6 @@ export default function SearchForm({ onSearch, isLoading }: SearchFormProps) {
     setCity(cityName)
     setShowSuggestions(false)
     onSearch(cityName)
-  }
-
-  async function handleNearMe() {
-    if (!navigator.geolocation) {
-      alert('Geolocation is not supported by your browser')
-      return
-    }
-
-    setLocatingUser(true)
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        try {
-          const { latitude, longitude } = position.coords
-          const res = await fetch(
-            `https://api.geoapify.com/v1/geocode/reverse?lat=${latitude}&lon=${longitude}&apiKey=${process.env.NEXT_PUBLIC_GEOAPIFY_API_KEY || ''}`
-          )
-          const data = await res.json()
-          const city = data.features?.[0]?.properties?.city || 
-                       data.features?.[0]?.properties?.name ||
-                       'Unknown location'
-          setCity(city)
-          onSearch(city)
-        } catch {
-          alert('Could not determine your location')
-        } finally {
-          setLocatingUser(false)
-        }
-      },
-      () => {
-        alert('Unable to get your location. Please allow location access.')
-        setLocatingUser(false)
-      }
-    )
   }
 
   async function handleSurpriseMe() {
@@ -168,17 +134,7 @@ export default function SearchForm({ onSearch, isLoading }: SearchFormProps) {
         </div>
       </form>
 
-      <div className="flex items-center justify-center gap-4 mt-4">
-        <button
-          type="button"
-          onClick={handleNearMe}
-          disabled={isLoading || locatingUser}
-          className="text-white/80 hover:text-white text-sm flex items-center gap-2 transition-colors disabled:opacity-50"
-        >
-          <i className={`fa-solid ${locatingUser ? 'fa-circle-notch animate-spin' : 'fa-crosshairs'}`}></i>
-          {locatingUser ? 'Locating...' : 'Near me'}
-        </button>
-        <span className="text-white/40">•</span>
+      <div className="flex items-center justify-center mt-4">
         <button
           type="button"
           onClick={handleSurpriseMe}
