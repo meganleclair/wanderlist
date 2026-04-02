@@ -1,15 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '@/lib/AuthContext'
 
 interface AuthModalProps {
   isOpen: boolean
   onClose: () => void
+  /** Called when the user closes via backdrop or X (not after a successful login). */
+  onDismiss?: () => void
   initialMode?: 'login' | 'signup'
 }
 
-export default function AuthModal({ isOpen, onClose, initialMode = 'login' }: AuthModalProps) {
+export default function AuthModal({ isOpen, onClose, onDismiss, initialMode = 'login' }: AuthModalProps) {
   const [mode, setMode] = useState<'login' | 'signup'>(initialMode)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -18,6 +20,15 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login' }: Au
   const [success, setSuccess] = useState('')
 
   const { signIn, signUp } = useAuth()
+
+  useEffect(() => {
+    if (isOpen) setMode(initialMode)
+  }, [isOpen, initialMode])
+
+  function handleDismiss() {
+    onDismiss?.()
+    onClose()
+  }
 
   if (!isOpen) return null
 
@@ -61,15 +72,16 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login' }: Au
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div 
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={onClose}
+        onClick={handleDismiss}
       ></div>
       
       <div className="relative bg-cream-50 rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
         <button
-          onClick={onClose}
+          type="button"
+          onClick={handleDismiss}
           className="absolute top-4 right-4 text-stone-400 hover:text-stone-600 transition-colors"
         >
           <i className="fa-solid fa-xmark text-xl"></i>

@@ -1,8 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useAuth } from '@/lib/AuthContext'
 import Navigation from '@/components/Navigation'
+import AuthModal from '@/components/AuthModal'
+import { getCuratedPriceFromUsd } from '@/lib/curated-itinerary-prices'
+import { formatEstimatedBudgetUsd } from '@/lib/trip-pricing'
 
 interface SamplePlace {
   name: string
@@ -393,6 +396,8 @@ export default function DiscoverPage() {
   const [selectedType, setSelectedType] = useState<string | null>(null)
   const [selectedInterest, setSelectedInterest] = useState<string | null>(null)
   const [viewingItinerary, setViewingItinerary] = useState<SampleItinerary | null>(null)
+  const [showAuthModal, setShowAuthModal] = useState(false)
+  const pendingCopyRef = useRef<SampleItinerary | null>(null)
 
   const TRIP_TYPES = ['City', 'Country', 'Region']
   const allInterests = Array.from(new Set(
@@ -406,57 +411,76 @@ export default function DiscoverPage() {
     return matchesType && matchesInterest
   })
 
+  const executeCopyItinerary = useCallback(
+    async (itinerary: SampleItinerary) => {
+      const token = session?.access_token
+      if (!token) return
+
+      setCopying(itinerary.id)
+      try {
+        const response = await fetch('/api/itineraries', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ name: itinerary.name }),
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          const newItineraryId = data.itinerary.id
+
+          for (const place of itinerary.places) {
+            await fetch('/api/saved-places', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                itinerary_id: newItineraryId,
+                place_id: `sample-${place.name.toLowerCase().replace(/\s+/g, '-')}`,
+                name: place.name,
+                category: place.category,
+                address: place.address,
+                city: itinerary.cities[0],
+                day_number: place.day_number,
+              }),
+            })
+          }
+
+          setCopiedId(itinerary.id)
+          setTimeout(() => setCopiedId(null), 3000)
+        }
+      } catch (error) {
+        console.error('Failed to copy itinerary:', error)
+      } finally {
+        setCopying(null)
+      }
+    },
+    [session?.access_token]
+  )
+
+  useEffect(() => {
+    if (!user || !session?.access_token) return
+    const pending = pendingCopyRef.current
+    if (!pending) return
+    pendingCopyRef.current = null
+    void executeCopyItinerary(pending)
+  }, [user, session?.access_token, executeCopyItinerary])
+
   async function copyToMyTrips(itinerary: SampleItinerary) {
-    if (!user || !session) {
-      alert('Please sign in to copy itineraries to your trips')
+    if (!user || !session?.access_token) {
+      pendingCopyRef.current = itinerary
+      setShowAuthModal(true)
       return
     }
-
-    setCopying(itinerary.id)
-    try {
-      const response = await fetch('/api/itineraries', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ name: itinerary.name }),
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        const newItineraryId = data.itinerary.id
-
-        for (const place of itinerary.places) {
-          await fetch('/api/saved-places', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${session.access_token}`,
-            },
-            body: JSON.stringify({
-              itinerary_id: newItineraryId,
-              place_id: `sample-${place.name.toLowerCase().replace(/\s+/g, '-')}`,
-              name: place.name,
-              category: place.category,
-              address: place.address,
-              city: itinerary.cities[0],
-              day_number: place.day_number,
-            }),
-          })
-        }
-
-        setCopiedId(itinerary.id)
-        setTimeout(() => setCopiedId(null), 3000)
-      }
-    } catch (error) {
-      console.error('Failed to copy itinerary:', error)
-    } finally {
-      setCopying(null)
-    }
+    await executeCopyItinerary(itinerary)
   }
 
   return (
+    <>
     <main className="min-h-screen bg-cream-100">
       <Navigation />
 
@@ -570,12 +594,17 @@ export default function DiscoverPage() {
                   {itinerary.description}
                 </p>
                 
-                <div className="flex items-center gap-1.5 text-xs text-stone-400 mb-4">
+                <div className="flex items-center gap-1.5 text-xs text-stone-400 mb-2">
                   <i className="fa-solid fa-location-dot"></i>
                   <span>{itinerary.cities.join(' → ')}</span>
                   <span className="mx-1">•</span>
                   <span>{itinerary.places.length} places</span>
                 </div>
+                <p className="text-sm font-medium text-stone-800 mb-1">
+                  <i className="fa-solid fa-tag mr-1.5 text-stone-400"></i>
+                  From {formatEstimatedBudgetUsd(getCuratedPriceFromUsd(itinerary.id))}
+                </p>
+                <p className="text-xs text-stone-400 mb-4">Est. trip budget (excl. flights)</p>
 
                 <button
                   onClick={(e) => {
@@ -644,7 +673,7 @@ export default function DiscoverPage() {
             <div className="flex-1 overflow-y-auto p-6">
               {/* Overview */}
               <div className="mb-6">
-                <div className="flex items-center gap-4 text-sm text-stone-500 mb-3">
+                <div className="flex flex-wrap items-center gap-4 text-sm text-stone-500 mb-3">
                   <span className="flex items-center gap-1.5">
                     <i className="fa-regular fa-calendar"></i>
                     {viewingItinerary.duration}
@@ -657,7 +686,12 @@ export default function DiscoverPage() {
                     <i className="fa-solid fa-map-pin"></i>
                     {viewingItinerary.places.length} places
                   </span>
+                  <span className="flex items-center gap-1.5 font-medium text-stone-800">
+                    <i className="fa-solid fa-tag text-stone-400"></i>
+                    From {formatEstimatedBudgetUsd(getCuratedPriceFromUsd(viewingItinerary.id))}
+                  </span>
                 </div>
+                <p className="text-xs text-stone-400 mb-3">Est. trip budget (excl. flights)</p>
                 <p className="text-stone-600">{viewingItinerary.description}</p>
               </div>
 
@@ -742,5 +776,15 @@ export default function DiscoverPage() {
         </div>
       )}
     </main>
+
+    <AuthModal
+      isOpen={showAuthModal}
+      onClose={() => setShowAuthModal(false)}
+      onDismiss={() => {
+        pendingCopyRef.current = null
+      }}
+      initialMode="login"
+    />
+    </>
   )
 }

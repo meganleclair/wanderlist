@@ -45,9 +45,7 @@ export default function Navigation() {
             </div>
             
             <div className="flex items-center gap-3">
-              {loading ? (
-                <div className="w-20 h-9 bg-cream-200 rounded-md animate-pulse"></div>
-              ) : user ? (
+              {user ? (
                 <div className="relative">
                   <button
                     onClick={() => setShowUserMenu(!showUserMenu)}
@@ -93,15 +91,19 @@ export default function Navigation() {
                 </div>
               ) : (
                 <>
-                  <button 
+                  <button
+                    type="button"
                     onClick={openLogin}
-                    className="btn-outline px-4 py-2 text-sm rounded-md"
+                    disabled={loading}
+                    className="btn-outline px-4 py-2 text-sm rounded-md text-stone-800 border-stone-300 disabled:opacity-60"
                   >
                     Log In
                   </button>
-                  <button 
+                  <button
+                    type="button"
                     onClick={openSignUp}
-                    className="btn-primary px-4 py-2 text-sm rounded-md"
+                    disabled={loading}
+                    className="btn-primary px-4 py-2 text-sm rounded-md disabled:opacity-60"
                   >
                     Sign Up
                   </button>

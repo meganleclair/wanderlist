@@ -4,6 +4,12 @@ import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { Itinerary, SavedPlace } from '@/lib/database.types'
+import {
+  estimateTripDaysFromPlaces,
+  countTripCityCount,
+  estimateCustomTripBudgetUsd,
+  formatEstimatedBudgetUsd,
+} from '@/lib/trip-pricing'
 
 const PlacesMap = dynamic(() => import('@/components/PlacesMap'), { ssr: false })
 
@@ -88,6 +94,15 @@ export default function SharedTripPage({ params }: SharedTripPageProps) {
 
   const cities = getCities()
   const dayGroups = groupByDay(itinerary.saved_places || [])
+  const places = itinerary.saved_places || []
+  const sharedBudgetEstimate =
+    places.length > 0
+      ? estimateCustomTripBudgetUsd({
+          dayCount: estimateTripDaysFromPlaces(places, null),
+          placeCount: places.length,
+          cityCount: countTripCityCount(places),
+        })
+      : null
 
   return (
     <main className="min-h-screen bg-cream-100">
@@ -108,6 +123,15 @@ export default function SharedTripPage({ params }: SharedTripPageProps) {
             <p className="text-stone-500 flex items-center justify-center gap-2">
               <i className="fa-solid fa-location-dot"></i>
               {cities.join(' • ')}
+            </p>
+          )}
+          {sharedBudgetEstimate != null && (
+            <p className="text-stone-600 text-sm mt-4 flex flex-col items-center gap-1">
+              <span>
+                <i className="fa-solid fa-tag mr-1.5 text-stone-400"></i>
+                <span className="font-medium text-stone-800">Est. {formatEstimatedBudgetUsd(sharedBudgetEstimate)}</span>
+              </span>
+              <span className="text-xs text-stone-400">Trip budget, excl. flights</span>
             </p>
           )}
         </div>

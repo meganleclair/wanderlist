@@ -5,6 +5,12 @@ import dynamic from 'next/dynamic'
 import { useAuth } from '@/lib/AuthContext'
 import { Itinerary, SavedPlace } from '@/lib/database.types'
 import Navigation from '@/components/Navigation'
+import {
+  estimateTripDaysFromPlaces,
+  countTripCityCount,
+  estimateCustomTripBudgetUsd,
+  formatEstimatedBudgetUsd,
+} from '@/lib/trip-pricing'
 
 const PlacesMap = dynamic(() => import('@/components/PlacesMap'), { ssr: false })
 
@@ -583,6 +589,14 @@ export default function TripsPage() {
     return Array.from(cities)
   }
 
+  function getCustomTripBudgetEstimate(itinerary: Itinerary): number | null {
+    const placeCount = itinerary.saved_places?.length ?? 0
+    if (placeCount === 0) return null
+    const days = estimateTripDaysFromPlaces(itinerary.saved_places, tripDates[itinerary.id] ?? null)
+    const cityCount = countTripCityCount(itinerary.saved_places)
+    return estimateCustomTripBudgetUsd({ dayCount: days, placeCount, cityCount })
+  }
+
   function exportToPDF(itinerary: Itinerary) {
     const dayGroups = groupByDay(itinerary.saved_places || [])
     const cities = getCitiesFromPlaces(itinerary)
@@ -709,6 +723,7 @@ export default function TripsPage() {
                 <div className="space-y-4">
                   {itineraries.filter(i => !completedTrips.has(i.id) && !archivedTrips.has(i.id)).map((itinerary) => {
                     const cities = getCitiesFromPlaces(itinerary)
+                    const budgetEstimate = getCustomTripBudgetEstimate(itinerary)
                     const isExpanded = expandedTrip === itinerary.id
                     const dayGroups = groupByDay(itinerary.saved_places || [])
                     const maxDay = getMaxDay(itinerary)
@@ -785,6 +800,15 @@ export default function TripsPage() {
                             </span>
                           )}
                         </p>
+                        {budgetEstimate != null && (
+                          <p className="text-stone-600 text-sm mt-2 flex items-start gap-1.5">
+                            <i className="fa-solid fa-tag text-stone-400 mt-0.5"></i>
+                            <span>
+                              <span className="font-medium text-stone-800">Est. {formatEstimatedBudgetUsd(budgetEstimate)}</span>
+                              <span className="block text-xs text-stone-400 font-normal">Trip budget, excl. flights</span>
+                            </span>
+                          </p>
+                        )}
                       </div>
                       <div className="flex items-center gap-2">
                         {/* Mark Complete Button */}
@@ -1193,6 +1217,7 @@ export default function TripsPage() {
                 <div className="space-y-4">
                   {itineraries.filter(i => completedTrips.has(i.id) && !archivedTrips.has(i.id)).map((itinerary) => {
                     const cities = getCitiesFromPlaces(itinerary)
+                    const budgetEstimate = getCustomTripBudgetEstimate(itinerary)
                     return (
                       <div key={itinerary.id} className="bg-white/60 border border-cream-300 rounded-xl p-5">
                         <div className="flex items-start justify-between">
@@ -1210,6 +1235,13 @@ export default function TripsPage() {
                             <p className="text-stone-400 text-xs mt-1">
                               {itinerary.saved_places?.length || 0} places
                             </p>
+                            {budgetEstimate != null && (
+                              <p className="text-stone-500 text-sm mt-2">
+                                <i className="fa-solid fa-tag mr-1.5 text-stone-400"></i>
+                                Est. {formatEstimatedBudgetUsd(budgetEstimate)}
+                                <span className="text-xs text-stone-400 block">Trip budget, excl. flights</span>
+                              </p>
+                            )}
                           </div>
                           <div className="flex items-center gap-1">
                             <button
@@ -1257,6 +1289,7 @@ export default function TripsPage() {
                   <div className="mt-4 space-y-3">
                     {itineraries.filter(i => archivedTrips.has(i.id)).map((itinerary) => {
                       const cities = getCitiesFromPlaces(itinerary)
+                      const budgetEstimate = getCustomTripBudgetEstimate(itinerary)
                       return (
                         <div key={itinerary.id} className="bg-cream-50 border border-cream-200 rounded-lg p-4 opacity-60">
                           <div className="flex items-center justify-between">
@@ -1264,6 +1297,12 @@ export default function TripsPage() {
                               <h3 className="font-medium text-stone-600">{itinerary.name}</h3>
                               {cities.length > 0 && (
                                 <p className="text-stone-400 text-xs">{cities.join(', ')}</p>
+                              )}
+                              {budgetEstimate != null && (
+                                <p className="text-stone-500 text-xs mt-1">
+                                  <i className="fa-solid fa-tag mr-1 text-stone-400"></i>
+                                  Est. {formatEstimatedBudgetUsd(budgetEstimate)}
+                                </p>
                               )}
                             </div>
                             <div className="flex items-center gap-1">
