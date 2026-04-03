@@ -12,17 +12,21 @@ interface AuthModalProps {
 }
 
 export default function AuthModal({ isOpen, onClose, onDismiss, initialMode = 'login' }: AuthModalProps) {
-  const [mode, setMode] = useState<'login' | 'signup'>(initialMode)
+  const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>(initialMode)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
-  const { signIn, signUp } = useAuth()
+  const { signIn, signUp, resetPasswordForEmail } = useAuth()
 
   useEffect(() => {
-    if (isOpen) setMode(initialMode)
+    if (isOpen) {
+      setMode(initialMode === 'signup' ? 'signup' : 'login')
+      setError('')
+      setSuccess('')
+    }
   }, [isOpen, initialMode])
 
   function handleDismiss() {
@@ -37,6 +41,19 @@ export default function AuthModal({ isOpen, onClose, onDismiss, initialMode = 'l
     setLoading(true)
     setError('')
     setSuccess('')
+
+    if (mode === 'forgot') {
+      const { error } = await resetPasswordForEmail(email.trim())
+      if (error) {
+        setError(error.message)
+      } else {
+        setSuccess(
+          'If an account exists for that email, you will receive a link to reset your password shortly.'
+        )
+      }
+      setLoading(false)
+      return
+    }
 
     if (mode === 'login') {
       const { error } = await signIn(email, password)
@@ -66,7 +83,19 @@ export default function AuthModal({ isOpen, onClose, onDismiss, initialMode = 'l
   }
 
   function switchMode() {
-    setMode(mode === 'login' ? 'signup' : 'login')
+    setMode(mode === 'signup' ? 'login' : 'signup')
+    setError('')
+    setSuccess('')
+  }
+
+  function goToForgot() {
+    setMode('forgot')
+    setError('')
+    setSuccess('')
+  }
+
+  function backToLogin() {
+    setMode('login')
     setError('')
     setSuccess('')
   }
@@ -89,12 +118,18 @@ export default function AuthModal({ isOpen, onClose, onDismiss, initialMode = 'l
 
         <div className="p-8">
           <h2 className="text-2xl font-serif text-stone-900 mb-2">
-            {mode === 'login' ? 'Welcome back' : 'Create an account'}
+            {mode === 'login'
+              ? 'Welcome back'
+              : mode === 'signup'
+                ? 'Create an account'
+                : 'Forgot password'}
           </h2>
           <p className="text-stone-500 text-sm mb-6">
-            {mode === 'login' 
-              ? 'Sign in to save places and create itineraries' 
-              : 'Join Wanderlist to start planning your adventures'}
+            {mode === 'login'
+              ? 'Sign in to save places and create itineraries'
+              : mode === 'signup'
+                ? 'Join Wanderlist to start planning your adventures'
+                : 'Enter your email and we will send you a link to choose a new password.'}
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -110,9 +145,11 @@ export default function AuthModal({ isOpen, onClose, onDismiss, initialMode = 'l
                 className="input-field w-full px-4 py-3 rounded-md"
                 placeholder="you@example.com"
                 required
+                autoComplete="email"
               />
             </div>
 
+            {mode !== 'forgot' && (
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-stone-700 mb-1">
                 Password
@@ -127,7 +164,17 @@ export default function AuthModal({ isOpen, onClose, onDismiss, initialMode = 'l
                 required
                 minLength={6}
               />
+              {mode === 'login' && (
+                <button
+                  type="button"
+                  onClick={goToForgot}
+                  className="mt-2 text-sm text-stone-600 hover:text-stone-900 hover:underline"
+                >
+                  Forgot password?
+                </button>
+              )}
             </div>
+            )}
 
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">
@@ -149,25 +196,47 @@ export default function AuthModal({ isOpen, onClose, onDismiss, initialMode = 'l
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
                   <i className="fa-solid fa-circle-notch animate-spin"></i>
-                  {mode === 'login' ? 'Signing in...' : 'Creating account...'}
+                  {mode === 'forgot'
+                    ? 'Sending…'
+                    : mode === 'login'
+                      ? 'Signing in...'
+                      : 'Creating account...'}
                 </span>
+              ) : mode === 'forgot' ? (
+                'Send reset link'
+              ) : mode === 'login' ? (
+                'Sign In'
               ) : (
-                mode === 'login' ? 'Sign In' : 'Create Account'
+                'Create Account'
               )}
             </button>
           </form>
 
-          <div className="mt-6 text-center">
-            <p className="text-stone-500 text-sm">
-              {mode === 'login' ? "Don't have an account?" : 'Already have an account?'}
+          {mode === 'forgot' ? (
+            <div className="mt-6 text-center">
               <button
-                onClick={switchMode}
-                className="ml-1 text-stone-900 font-medium hover:underline"
+                type="button"
+                onClick={backToLogin}
+                className="text-sm text-stone-600 hover:text-stone-900 hover:underline"
               >
-                {mode === 'login' ? 'Sign up' : 'Sign in'}
+                <i className="fa-solid fa-arrow-left mr-1"></i>
+                Back to sign in
               </button>
-            </p>
-          </div>
+            </div>
+          ) : (
+            <div className="mt-6 text-center">
+              <p className="text-stone-500 text-sm">
+                {mode === 'login' ? "Don't have an account?" : 'Already have an account?'}
+                <button
+                  type="button"
+                  onClick={switchMode}
+                  className="ml-1 text-stone-900 font-medium hover:underline"
+                >
+                  {mode === 'login' ? 'Sign up' : 'Sign in'}
+                </button>
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>
