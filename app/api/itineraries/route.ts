@@ -103,9 +103,20 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
+  const clientIP = getClientIP(request)
+  const rateLimit = checkRateLimit(`itineraries-patch:${clientIP}`, 30, 60000)
+  if (!rateLimit.allowed) {
+    return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
+  }
+
   const authHeader = request.headers.get('authorization')
   if (!authHeader) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const token = authHeader.replace('Bearer ', '')
+  if (!isValidAuthToken(token)) {
+    return NextResponse.json({ error: 'Invalid token format' }, { status: 401 })
   }
 
   const supabase = createClient(supabaseUrl, supabaseAnonKey, {
@@ -122,6 +133,29 @@ export async function PATCH(request: NextRequest) {
 
   if (!id) {
     return NextResponse.json({ error: 'Itinerary ID is required' }, { status: 400 })
+  }
+
+  if (action === 'rename') {
+    const rawName = body.name
+    if (!rawName) {
+      return NextResponse.json({ error: 'Name is required' }, { status: 400 })
+    }
+    const name = sanitizeInput(rawName)
+    if (name.length < 1 || name.length > 200) {
+      return NextResponse.json({ error: 'Invalid name length' }, { status: 400 })
+    }
+    const { data, error } = await supabase
+      .from('itineraries')
+      .update({ name })
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .select()
+      .single()
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    return NextResponse.json({ itinerary: data })
   }
 
   if (action === 'generate_share_link') {

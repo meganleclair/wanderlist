@@ -92,16 +92,18 @@ export default function TripsPage() {
   const [optimizingTrip, setOptimizingTrip] = useState<Itinerary | null>(null)
   const [showTravelInfoModal, setShowTravelInfoModal] = useState(false)
   const [travelInfoTrip, setTravelInfoTrip] = useState<Itinerary | null>(null)
-  const [tripNotes, setTripNotes] = useState('')
+  const [tripNotes, setTripNotes] = useState<Record<string, string>>({})
   const [dayTravelInfo, setDayTravelInfo] = useState<Record<string, { flight: string; hotel: string }>>({})
   const [editingDayInfo, setEditingDayInfo] = useState<string | null>(null)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  const [renamingTrip, setRenamingTrip] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
   const [completedTrips, setCompletedTrips] = useState<Set<string>>(new Set())
   const [archivedTrips, setArchivedTrips] = useState<Set<string>>(new Set())
   const [showArchived, setShowArchived] = useState(false)
   const noteInputRef = useRef<HTMLTextAreaElement>(null)
 
-  // Load completed/archived status and trip dates from localStorage
+  // Load all persisted state from localStorage on mount
   useEffect(() => {
     const saved = localStorage.getItem('wanderlist-trip-status')
     if (saved) {
@@ -110,12 +112,16 @@ export default function TripsPage() {
       setArchivedTrips(new Set(archived || []))
     }
     const savedDates = localStorage.getItem('wanderlist-trip-dates')
-    if (savedDates) {
-      setTripDates(JSON.parse(savedDates))
-    }
+    if (savedDates) setTripDates(JSON.parse(savedDates))
+
+    const savedDayInfo = localStorage.getItem('wanderlist-day-travel-info')
+    if (savedDayInfo) setDayTravelInfo(JSON.parse(savedDayInfo))
+
+    const savedNotes = localStorage.getItem('wanderlist-trip-notes')
+    if (savedNotes) setTripNotes(JSON.parse(savedNotes))
   }, [])
 
-  // Save completed/archived status to localStorage
+  // Persist completed/archived status
   useEffect(() => {
     localStorage.setItem('wanderlist-trip-status', JSON.stringify({
       completed: Array.from(completedTrips),
@@ -123,10 +129,20 @@ export default function TripsPage() {
     }))
   }, [completedTrips, archivedTrips])
 
-  // Save trip dates to localStorage
+  // Persist trip dates
   useEffect(() => {
     localStorage.setItem('wanderlist-trip-dates', JSON.stringify(tripDates))
   }, [tripDates])
+
+  // Persist per-day flight/hotel info
+  useEffect(() => {
+    localStorage.setItem('wanderlist-day-travel-info', JSON.stringify(dayTravelInfo))
+  }, [dayTravelInfo])
+
+  // Persist per-trip notes
+  useEffect(() => {
+    localStorage.setItem('wanderlist-trip-notes', JSON.stringify(tripNotes))
+  }, [tripNotes])
 
   useEffect(() => {
     if (user && session) {
@@ -283,6 +299,31 @@ export default function TripsPage() {
       }
     } catch (error) {
       console.error('Failed to delete itinerary:', error)
+    }
+  }
+
+  async function renameItinerary(id: string, name: string) {
+    const trimmed = name.trim()
+    if (!trimmed) { setRenamingTrip(null); return }
+    try {
+      const response = await fetch('/api/itineraries', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ id, action: 'rename', name: trimmed }),
+      })
+      if (response.ok) {
+        setItineraries(prev =>
+          prev.map(it => it.id === id ? { ...it, name: trimmed } : it)
+        )
+      }
+    } catch (error) {
+      console.error('Failed to rename itinerary:', error)
+    } finally {
+      setRenamingTrip(null)
+      setRenameValue('')
     }
   }
 
@@ -737,7 +778,23 @@ export default function TripsPage() {
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-3">
-                          <h3 className="font-serif text-xl text-stone-900">{itinerary.name}</h3>
+                          {renamingTrip === itinerary.id ? (
+                            <input
+                              type="text"
+                              value={renameValue}
+                              onChange={(e) => setRenameValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') renameItinerary(itinerary.id, renameValue)
+                                if (e.key === 'Escape') { setRenamingTrip(null); setRenameValue('') }
+                              }}
+                              onBlur={() => renameItinerary(itinerary.id, renameValue)}
+                              onClick={(e) => e.stopPropagation()}
+                              autoFocus
+                              className="font-serif text-xl text-stone-900 bg-white border border-stone-300 rounded px-2 py-0.5 focus:outline-none focus:border-stone-500 w-full max-w-xs"
+                            />
+                          ) : (
+                            <h3 className="font-serif text-xl text-stone-900">{itinerary.name}</h3>
+                          )}
                           {getCountdown(itinerary.id) && (
                             <span className="bg-amber-100 text-amber-700 text-xs font-medium px-2 py-0.5 rounded-full">
                               {getCountdown(itinerary.id)}
@@ -836,10 +893,22 @@ export default function TripsPage() {
                           </button>
                           
                           {openMenuId === itinerary.id && (
-                            <div 
+                            <div
                               className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-cream-200 py-1 z-50 min-w-[160px]"
                               onClick={(e) => e.stopPropagation()}
                             >
+                              <button
+                                onClick={() => {
+                                  setRenamingTrip(itinerary.id)
+                                  setRenameValue(itinerary.name)
+                                  setOpenMenuId(null)
+                                }}
+                                className="w-full text-left px-4 py-2 text-sm text-stone-600 hover:bg-cream-100 flex items-center gap-3"
+                              >
+                                <i className="fa-solid fa-pencil w-4"></i>
+                                Rename
+                              </button>
+                              <div className="border-t border-cream-200 my-1"></div>
                               <button
                                 onClick={() => {
                                   setEditingDates(itinerary.id)
@@ -1496,8 +1565,10 @@ export default function TripsPage() {
                   Travel Notes
                 </label>
                 <textarea
-                  value={tripNotes}
-                  onChange={(e) => setTripNotes(e.target.value)}
+                  value={tripNotes[travelInfoTrip.id] ?? ''}
+                  onChange={(e) =>
+                    setTripNotes((prev) => ({ ...prev, [travelInfoTrip.id]: e.target.value }))
+                  }
                   placeholder="e.g., Travel insurance policy #, emergency contacts, packing list, restaurant reservations..."
                   className="input-field w-full px-4 py-3 rounded-lg resize-none"
                   rows={6}
